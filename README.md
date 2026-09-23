@@ -104,6 +104,8 @@ MAX_INSTANCES=20   # 实例数量上限
 | 9 | 更新 Docker 镜像 | `docker compose pull` + `up -d`，不删除数据 |
 | 0 | 退出 | |
 
+> 每个操作执行完成后，会提示「按任意键返回主菜单」，方便看完输出后再回到菜单。
+
 ## 安全说明
 
 - **VNC 密码**保存在 `~/atrust/.env`（`chmod 600`），`compose.yaml` 中只引用 `${ATRUST_PASSWORD}`，不写死密码。

@@ -141,7 +141,7 @@ check "$([ "$RC" != "0" ] && echo 1 || echo 0)" "1.3 Docker 不可用时脚本�
 echo "--- 2. 非法数量输入不会退出 ---"
 
 reset_home
-capture '1\n0\n5\npassw0rd\npassw0rd\n0\n'
+capture '1\n0\n5\npassw0rd\npassw0rd\nk0\n'
 out="$CAP"
 check "$(contains "$out" "输入无效")" "2.1 数量=0 时提示输入无效并重新询问" "输入无效"
 check "$(contains "$out" "创建完成")" "2.2 数量=5 后正常创建" "创建完成"
@@ -150,7 +150,7 @@ check "$(contains "$out" "创建完成")" "2.2 数量=5 后正常创建" "创建
 echo "--- 3. Test 1：创建 1 个实例 ---"
 
 reset_home
-capture '1\n1\npwtest\npwtest\n0\n'
+capture '1\n1\npwtest\npwtest\nk0\n'
 out="$CAP"
 check "$(contains "$out" "已生成")" "3.1 生成 compose" "已生成"
 check "$(contains "$out" "创建完成")" "3.2 创建完成提示" "创建完成"
@@ -181,7 +181,7 @@ check "$(contains "$out" "Mihomo")" "3.17 Mihomo 示例" "Mihomo"
 echo "--- 4. Test 2：创建 2 个实例，端口递增 ---"
 
 reset_home
-capture '1\n2\npw\npw\n0\n'
+capture '1\n2\npw\npw\nk0\n'
 out="$CAP"
 C="$(cat "${COMPOSE}" 2>/dev/null || true)"
 check "$([ "$(printf '%s' "$C" | grep -cF 'container_name: atrust-' || true)" = "2" ] && echo 1 || echo 0)" "4.1 两个 service" "container_name 数量 = 2"
@@ -194,7 +194,7 @@ check "$([ -d "${HOMEDIR}/atrust-data-2" ] && echo 1 || echo 0)" "4.6 第二个�
 # ---------------------------------------------------------------
 echo "--- 5. Test 3：停止所有实例 ---"
 
-capture '4\n0\n' # 复用上一场景的状态（2 个实例 running）
+capture '4\nk0\n' # 复用上一场景的状态（2 个实例 running）
 out="$CAP"
 check "$(contains "$out" "已停止")" "5.1 停止提示" "已停止"
 check "$([ "$(grep -c ':running$' "$STUB_STATE" 2>/dev/null || true)" = "0" ] && \
@@ -203,7 +203,7 @@ check "$([ "$(grep -c ':running$' "$STUB_STATE" 2>/dev/null || true)" = "0" ] &&
 # ---------------------------------------------------------------
 echo "--- 6. Test 4：启动所有实例 ---"
 
-capture '3\n0\n'
+capture '3\nk0\n'
 out="$CAP"
 check "$(contains "$out" "已启动")" "6.1 启动提示" "已启动"
 check "$([ "$(grep -c ':running$' "$STUB_STATE" 2>/dev/null || true)" = "2" ] && echo 1 || echo 0)" "6.2 两个实例恢复 running" "running=2"
@@ -211,7 +211,7 @@ check "$([ "$(grep -c ':running$' "$STUB_STATE" 2>/dev/null || true)" = "2" ] &&
 # ---------------------------------------------------------------
 echo "--- 7. Test 5：删除容器（保留数据） ---"
 
-capture '7\ny\n0\n'
+capture '7\ny\nk0\n'
 out="$CAP"
 check "$(contains "$out" "已删除所有 aTrust 容器")" "7.1 删除提示" "已删除所有 aTrust 容器"
 check "$([ "$(wc -l < "$STUB_STATE" 2>/dev/null || echo 0)" = "0" ] && echo 1 || echo 0)" "7.2 状态已清空（容器删除）" "state 空"
@@ -221,12 +221,12 @@ check "$([ -f "${COMPOSE}" ] && [ -f "${ENVF}" ] && echo 1 || echo 0)" "7.4 comp
 # ---------------------------------------------------------------
 echo "--- 8. Test 6：完全删除（需输入 DELETE，且不可逆） ---"
 
-capture '8\nwrongtext\n0\n'
+capture '8\nwrongtext\nk0\n'
 out="$CAP"
 check "$(contains "$out" "已取消")" "8.1 确认文本不匹配则取消" "已取消"
 check "$([ -e "${HOMEDIR}" ] && echo 1 || echo 0)" "8.2 未删除任何内容" "目录仍存在"
 
-capture '8\nDELETE\n0\n'
+capture '8\nDELETE\nk0\n'
 out="$CAP"
 check "$(contains "$out" "已完全删除")" "8.3 DELETE 后完全删除" "已完全删除"
 check "$([ ! -e "${HOMEDIR}" ] && echo 1 || echo 0)" "8.4 目录被删除" "目录不存在"
@@ -235,7 +235,7 @@ check "$([ ! -e "${HOMEDIR}" ] && echo 1 || echo 0)" "8.4 目录被删除" "目�
 echo "--- 9. Test 7：密码不一致要求重新输入 ---"
 
 reset_home
-capture '1\n1\npwA\npwB\nrealmatch\nrealmatch\n0\n'
+capture '1\n1\npwA\npwB\nrealmatch\nrealmatch\nk0\n'
 out="$CAP"
 check "$(contains "$out" "两次输入不一致")" "9.1 提示密码不一致" "两次输入不一致"
 check "$(contains "$(cat "${HOMEDIR}/.env" 2>/dev/null || true)" "ATRUST_PASSWORD='realmatch'")" "9.2 最终保存正确密码" "ATRUST_PASSWORD='realmatch'"
@@ -258,7 +258,7 @@ except OSError:
 PY
 LISTENER_PID=$!
 sleep 0.5
-capture "1\n1\n0\n"
+capture "1\n1\nk0\n"
 out="$CAP"
 check "$(contains "$out" "端口 ${S0} 已被占用")" "10.1 提示端口冲突" "端口 ${S0} 已被占用"
 check "$(contains "$out" "检测到端口冲突")" "10.2 提示停止创建" "检测到端口冲突"
@@ -270,8 +270,8 @@ wait "${LISTENER_PID}" 2>/dev/null || true
 echo "--- 11. 已有配置重新生成（数量变化） ---"
 
 reset_home
-capture '1\n1\npw\npw\n0\n' # 先创建 1 个
-capture '1\n3\ny\nnewpw\nnewpw\n0\n'
+capture '1\n1\npw\npw\nk0\n' # 先创建 1 个
+capture '1\n3\ny\nnewpw\nnewpw\nk0\n'
 out="$CAP"
 check "$(contains "$out" "检测到已有 aTrust 配置")" "11.1 提示已有配置" "检测到已有 aTrust 配置"
 check "$(contains "$out" "重新生成配置为 3 个实例")" "11.2 提示新数量" "重新生成配置为 3 个实例"
@@ -283,7 +283,7 @@ check "$([ -d "${HOMEDIR}/atrust-data-3" ] && echo 1 || echo 0)" "11.5 新建数
 # ---------------------------------------------------------------
 echo "--- 12. 无效菜单选项 ---"
 
-capture 'x\n0\n'
+capture 'x\nk0\n'
 out="$CAP"
 check "$(contains "$out" "无效选项")" "12.1 无效选项提示" "无效选项"
 
@@ -292,7 +292,7 @@ echo "--- 13. 日志查看（结束后回到菜单） ---"
 
 # 输入菜单 6 → 实例 2 → stub 跟踪 2 秒 → 回到菜单；3 秒后再发 0 退出
 set +e
-CAP="$( { printf '6\n2\n'; sleep 3; printf '0\n'; } | timeout 40 script -qec "bash '${MANAGER}'" /dev/null 2>&1 )"
+CAP="$( { printf '6\n2\n'; sleep 3; printf 'k0\n'; } | timeout 40 script -qec "bash '${MANAGER}'" /dev/null 2>&1 )"
 RC=$?
 set -e
 out="$CAP"

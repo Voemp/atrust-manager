@@ -609,7 +609,7 @@ show_menu() {
   cat <<'MENU'
 
 ╔══════════════════════════════════════════╗
-║            aTrust Manager v0.1.0            ║
+║          aTrust Manager v0.1.0           ║
 ╠══════════════════════════════════════════╣
 ║                                          ║
 ║  1. 创建 / 更新 aTrust 实例              ║
@@ -645,6 +645,14 @@ usage() {
 EOF
 }
 
+# 操作完成后按任意键返回主菜单，方便用户看完整输出；
+# 无输入（例如管道/EOF）时自动跳过，不影响运行
+wait_return() {
+  printf '\n按任意键返回主菜单 ... '
+  read -rsn1 || true
+  printf '\n'
+}
+
 main() {
   ensure_tty || exit 1
   check_env || exit 1
@@ -676,9 +684,9 @@ main() {
       8) destroy_all ;;
       9) update_image ;;
       0) echo; ok "再见。"; exit 0 ;;
-      *) warn "无效选项「${choice}」，请输入 0-9。"; pause ;;
+      *) warn "无效选项「${choice}」，请输入 0-9。" ;;
     esac
-    pause
+    wait_return
   done
 }
 
