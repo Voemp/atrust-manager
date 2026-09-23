@@ -10,7 +10,7 @@
 #  数据目录：${ATRUST_HOME:-$HOME/atrust}
 #
 #  一键运行：
-#     curl -fsSL https://<HOST>/atrust.sh | bash
+#     curl -fsSL https://am.voemp.top/atrust.sh | bash
 #
 #  命令行选项：
 #     -h, --help     显示帮助
@@ -76,7 +76,10 @@ ensure_tty() {
   if [[ -t 0 ]]; then
     return 0
   fi
-  if exec < /dev/tty 2>/dev/null; then
+  # 注意：exec 带重定向会把重定向永久应用到当前 shell。
+  # 这里不能写 `exec < /dev/tty 2>/dev/null` —— 2>/dev/null 会永久保留，
+  # 导致 curl | bash 模式下所有 stderr（数量提示、警告、错误）被静默丢弃。
+  if [[ -r /dev/tty ]] && exec < /dev/tty; then
     return 0
   fi
   err "需要交互式终端（TTY）才能运行本管理器。"
@@ -641,7 +644,7 @@ usage() {
 不带参数直接运行将进入交互式菜单。
 
 一键运行（部署到静态站点后）：
-  curl -fsSL https://<HOST>/atrust.sh | bash
+  curl -fsSL https://am.voemp.top/atrust.sh | bash
 EOF
 }
 

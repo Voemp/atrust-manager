@@ -300,6 +300,22 @@ check "$(contains "$out" "[stub] 模拟日志")" "13.1 显示日志" "[stub] 模
 check "$([ "$(count_of "$out" "请选择 [0-9]:")" -ge 2 ] && echo 1 || echo 0)" "13.2 日志结束后回到主菜单" "请选择出现 ≥2 次"
 
 # ---------------------------------------------------------------
+echo "--- 14. curl | bash 一键运行（管道模式） ---"
+
+# 回归测试：通过管道把脚本喂给 bash（等价 curl -fsSL ... | bash），
+# 必须能看到数量提示且创建成功（之前 ensure_tty 的 2>/dev/null 会吞掉数量提示）
+reset_home
+set +e
+CAP="$( printf '1\n2\npw\npw\nk0\n' | timeout 40 script -qec "cat '${MANAGER}' | bash" /dev/null 2>&1 )"
+RC=$?
+set -e
+out="$CAP"
+check "$(contains "$out" "请输入要创建的 aTrust 实例数量")" "14.1 管道模式下数量提示可见" "请输入要创建的 aTrust 实例数量"
+check "$(contains "$out" "创建完成")" "14.2 管道模式下创建成功" "创建完成"
+C="$(cat "${COMPOSE}" 2>/dev/null || true)"
+check "$([ "$(printf '%s' "$C" | grep -cF 'container_name: atrust-' || true)" = "2" ] && echo 1 || echo 0)" "14.3 管道模式生成 2 个实例" "container_name 数量 = 2"
+
+# ---------------------------------------------------------------
 echo
 echo "================ 结果汇总 ================"
 echo "通过: ${pass}"

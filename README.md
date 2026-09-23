@@ -18,10 +18,10 @@
 
 ## 快速开始
 
-在 WSL / Linux 中：
+在 WSL / Linux 中（一键运行）：
 
 ```bash
-curl -fsSL https://<HOST>/atrust.sh | bash
+curl -fsSL https://am.voemp.top/atrust.sh | bash
 ```
 
 或本地运行：
