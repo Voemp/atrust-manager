@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # =============================================================================
-#  aTrust Manager v0.1.0
+#  aTrust Manager v0.2.0
 #
 #  交互式 aTrust（hagb/docker-atrust）多实例管理工具。
 #  纯 Bash + Docker Compose 实现，无需 Node.js / Python / Go。
@@ -21,7 +21,7 @@
 
 set -Eeuo pipefail
 
-VERSION="0.1.0"
+VERSION="0.2.0"
 
 # ----------------------------- 基本配置 -----------------------------
 ATRUST_HOME="${ATRUST_HOME:-${HOME}/atrust}"
@@ -59,14 +59,14 @@ hint() { printf '    %s\n' "$*"; }
 
 pause() { sleep 1; }
 
-# 未预期错误兜底：打印位置后退出，避免“失败后继续执行”
+# 未预期错误兜底：打印位置与建议后返回主菜单，不退出整个脚本。
+# 菜单动作在子 shell 中执行，trap 触发时错误只终止该动作。
 on_error() {
   local rc=$?
   local src=${BASH_SOURCE[1]:-${BASH_SOURCE[0]}}
   local ln=${BASH_LINENO[0]}
   err "脚本内部错误（退出码 ${rc}）：${src}:${ln}"
-  err "这是一个意外错误。请保留上方输出，或选择「1. 创建 / 更新」重新生成配置。"
-  exit "${rc}"
+  err "该操作未完成。其余实例不受影响，请返回主菜单重试。"
 }
 trap 'on_error' ERR
 
@@ -146,6 +146,21 @@ ask_yn() {
   esac
 }
 
+# 统一询问实例编号：非法输入循环重询，EOF/取消返回非 0
+ask_number() {
+  local num
+  while :; do
+    # 提示走 stderr：本函数通过命令替换返回编号，提示若走 stdout 会被一并捕获
+    printf '请输入实例编号: ' >&2
+    IFS= read -r num || return 1
+    if [[ "$num" =~ ^[0-9]+$ ]]; then
+      printf '%s\n' "$num"
+      return 0
+    fi
+    warn "输入无效「${num}」，请输入数字编号。"
+  done
+}
+
 ask_instance_count() {
   local count
   while :; do
@@ -202,7 +217,7 @@ require_config() {
   return 0
 }
 
-# 当前 compose 文件中的实例数量
+# 当前 compose 文件中的实例数量（含编号空缺的计数）
 existing_count() {
   local n
   n="$(grep -Ec '^  atrust-[0-9]+:' "${COMPOSE_FILE}" 2>/dev/null || true)"
@@ -210,6 +225,59 @@ existing_count() {
     n=0
   fi
   printf '%s\n' "$n"
+}
+
+# 已配置实例的编号列表（升序、空格分隔）；无配置时为空字符串
+instance_numbers() {
+  local nums
+  nums="$(grep -E '^  atrust-[0-9]+:$' "${COMPOSE_FILE}" 2>/dev/null \
+          | sed -E 's/^  atrust-([0-9]+):.*/\1/' | sort -n | tr '\n' ' ')"
+  printf '%s\n' "${nums% }"
+}
+
+# 最大编号（无实例为 0）
+max_number() {
+  local nums
+  nums="$(instance_numbers)"
+  if [[ -z "$nums" ]]; then
+    printf '0\n'
+    return
+  fi
+  printf '%s\n' "${nums##* }"
+}
+
+# 1..最大编号 之间的空缺编号（空格分隔）；无空缺输出空
+gap_numbers() {
+  local max i nums
+  max="$(max_number)"
+  if ! [[ "$max" =~ ^[0-9]+$ ]] || (( max < 1 )); then
+    printf '\n'
+    return
+  fi
+  nums=" $(instance_numbers) "
+  for ((i = 1; i <= max; i++)); do
+    [[ " $nums " == *" $i "* ]] || printf '%s ' "$i"
+  done
+  printf '\n'
+}
+
+instance_exists() {
+  [[ " $(instance_numbers) " == *" $1 "* ]]
+}
+
+# 可视化展示现有 / 空缺 / 最大编号
+show_layout() {
+  local nums gaps max
+  nums="$(instance_numbers)"
+  gaps="$(gap_numbers)"
+  max="$(max_number)"
+  printf '现有编号：%s\n' "${nums:-（无）}"
+  if [[ -n "${gaps// /}" ]]; then
+    printf '空缺编号：%s\n' "${gaps% }"
+  else
+    printf '空缺编号：无\n'
+  fi
+  printf '最大编号：%s\n' "$max"
 }
 
 docker_compose_cmd() {
@@ -272,13 +340,15 @@ port_in_use() {
   return 1
 }
 
+# 检查 $1（空格分隔的编号列表）对应的宿主端口是否冲突
 check_ports() {
-  local count=$1 i port conflict=0
+  local nums=$1 n port conflict=0
   collect_our_ports
-  for ((i = 1; i <= count; i++)); do
-    for port in "$((SOCKS5_BASE + i - 1))" "$((HTTP_BASE + i - 1))" "$((VNC_BASE + i - 1))" "$((TUNNEL_BASE + i - 1))"; do
+  for n in $nums; do
+    [[ "$n" =~ ^[0-9]+$ ]] || continue
+    for port in "$((SOCKS5_BASE + n - 1))" "$((HTTP_BASE + n - 1))" "$((VNC_BASE + n - 1))" "$((TUNNEL_BASE + n - 1))"; do
       if port_in_use "$port"; then
-        err "端口 ${port} 已被占用，无法创建 atrust-${i}。"
+        err "端口 ${port} 已被占用，无法创建 atrust-${n}。"
         conflict=1
       fi
     done
@@ -298,12 +368,14 @@ write_env() {
   chmod 600 "${ENV_FILE}"
 }
 
+# 生成 compose：$1 = 空格分隔的编号列表，如 "1 3"
 generate_compose() {
-  local count=$1 i
+  local i
   cat > "${COMPOSE_FILE}" <<EOF
 services:
 EOF
-  for ((i = 1; i <= count; i++)); do
+  for i in $1; do
+    [[ "$i" =~ ^[0-9]+$ ]] || continue
     cat >> "${COMPOSE_FILE}" <<EOF
 
   atrust-${i}:
@@ -336,6 +408,25 @@ EOF
   done
 }
 
+# compose 备份 / 恢复（用于单实例操作的原子性）
+COMPOSE_BACKUP=""
+backup_compose() {
+  COMPOSE_BACKUP="${COMPOSE_FILE}.bak.$$"
+  cp -f "${COMPOSE_FILE}" "${COMPOSE_BACKUP}" 2>/dev/null || true
+}
+restore_compose() {
+  if [[ -n "$COMPOSE_BACKUP" && -f "$COMPOSE_BACKUP" ]]; then
+    mv -f "$COMPOSE_BACKUP" "$COMPOSE_FILE"
+  fi
+  COMPOSE_BACKUP=""
+}
+cleanup_compose() {
+  if [[ -n "$COMPOSE_BACKUP" ]]; then
+    rm -f "$COMPOSE_BACKUP" 2>/dev/null || true
+    COMPOSE_BACKUP=""
+  fi
+}
+
 docker_alive() {
   "${DOCKER[@]}" info >/dev/null 2>&1
 }
@@ -360,7 +451,7 @@ create_instances() {
     echo
   fi
 
-  if ! check_ports "$count"; then
+  if ! check_ports "$(seq -s ' ' 1 "$count")"; then
     return 0
   fi
 
@@ -375,7 +466,7 @@ create_instances() {
   done
 
   write_env
-  generate_compose "$count"
+  generate_compose "$(seq -s ' ' 1 "$count")"
   ok "已生成 ${COMPOSE_FILE}（共 ${count} 个实例）"
 
   if ! compose_validate; then
@@ -401,6 +492,161 @@ create_instances() {
   show_status
 }
 
+# 添加单个实例：默认最大编号+1，也可指定空缺编号
+add_instance() {
+  require_config || return 0
+  local nums max newn ans
+
+  nums="$(instance_numbers)"
+  max="$(max_number)"
+
+  echo
+  echo "当前实例布局："
+  show_layout
+  echo
+  printf '请输入要添加的实例编号（直接回车 = 最大编号+1 = %d）: ' "$((max + 1))"
+  IFS= read -r ans || return 0
+
+  if [[ -z "$ans" ]]; then
+    newn="$((max + 1))"
+  elif [[ "$ans" =~ ^[0-9]+$ ]]; then
+    newn="$ans"
+  else
+    warn "输入无效「${ans}」，操作已取消。"
+    return 0
+  fi
+
+  if (( newn < 1 || newn > MAX_INSTANCES )); then
+    warn "编号必须在 1-${MAX_INSTANCES} 之间，操作已取消。"
+    return 0
+  fi
+  if instance_exists "$newn"; then
+    err "编号 atrust-${newn} 已存在，操作已取消。"
+    return 0
+  fi
+
+  if ! check_ports "$newn"; then
+    return 0
+  fi
+
+  backup_compose
+  mkdir -p "${ATRUST_HOME}/atrust-data-${newn}"
+  generate_compose "${nums} ${newn}"
+  if ! compose_validate; then
+    restore_compose
+    return 0
+  fi
+  cleanup_compose
+
+  echo
+  info "正在启动 atrust-${newn} ..."
+  if ! "${DOCKER[@]}" compose -f "${COMPOSE_FILE}" up -d "atrust-${newn}"; then
+    err "启动 atrust-${newn} 失败。"
+    hint "建议检查 /dev/net/tun 与 NET_ADMIN 是否可用。"
+    return 0
+  fi
+
+  ok "已添加实例 atrust-${newn}（SOCKS5: 127.0.0.1:$((SOCKS5_BASE + newn - 1))）。"
+}
+
+# 删除单个实例：留空位，可选择是否删除数据，需输入 DELETE 确认
+delete_instance() {
+  require_config || return 0
+  local num nums newlist i dirdel ans
+
+  nums="$(instance_numbers)"
+  if [[ -z "${nums// /}" ]]; then
+    warn "没有可删除的实例。"
+    return 0
+  fi
+
+  echo
+  echo "当前实例布局："
+  show_layout
+  echo
+  num="$(ask_number)" || return 0
+  if ! instance_exists "$num"; then
+    err "编号 atrust-${num} 不存在，操作已取消。"
+    return 0
+  fi
+
+  echo
+  warn "将删除实例 atrust-${num} 的容器。"
+  dirdel=""
+  if ask_yn "是否同时删除数据目录 atrust-data-${num}？"; then
+    dirdel="y"
+  fi
+
+  printf '\n请完整输入 DELETE 以确认: '
+  IFS= read -r ans || return 0
+  echo
+  if [[ "$ans" != "DELETE" ]]; then
+    warn "确认文本不匹配（需要输入 DELETE），已取消。"
+    return 0
+  fi
+
+  info "正在停止并移除 atrust-${num} ..."
+  "${DOCKER[@]}" compose -f "${COMPOSE_FILE}" stop "atrust-${num}" >/dev/null 2>&1 || true
+  "${DOCKER[@]}" compose -f "${COMPOSE_FILE}" rm -sf "atrust-${num}" >/dev/null 2>&1 || true
+
+  if [[ -n "$dirdel" ]]; then
+    info "正在删除数据目录 atrust-data-${num} ..."
+    if ! rm -rf "${ATRUST_HOME}/atrust-data-${num}" 2>/dev/null; then
+      warn "普通删除失败（可能存在 root 属主文件），尝试 sudo ..."
+      if command -v sudo >/dev/null 2>&1 && sudo rm -rf "${ATRUST_HOME}/atrust-data-${num}" 2>/dev/null; then
+        ok "已删除数据目录 atrust-data-${num}。"
+      else
+        warn "数据目录删除失败，请手动执行： sudo rm -rf \"${ATRUST_HOME}/atrust-data-${num}\""
+      fi
+    fi
+  fi
+
+  # 重写 compose（去掉该编号，其余编号/端口保持不变 → 留空位）
+  newlist=""
+  for i in $nums; do
+    [[ "$i" != "$num" ]] && newlist+=" $i"
+  done
+  backup_compose
+  if [[ -z "${newlist// /}" ]]; then
+    rm -f "${COMPOSE_FILE}" "${ENV_FILE}" 2>/dev/null || true
+    echo
+    ok "已删除唯一的实例 atrust-${num}（配置与密码已一并清除）。"
+    return 0
+  fi
+  generate_compose "${newlist# }"
+  if ! compose_validate; then
+    restore_compose
+    return 0
+  fi
+  cleanup_compose
+  ok "已删除实例 atrust-${num}（编号空缺保留）。"
+}
+
+# 重建单个实例：仅重建指定容器，保留数据目录
+rebuild_instance() {
+  require_config || return 0
+  local num
+
+  echo
+  echo "当前实例布局："
+  show_layout
+  echo
+  num="$(ask_number)" || return 0
+  if ! instance_exists "$num"; then
+    err "编号 atrust-${num} 不存在，操作已取消。"
+    return 0
+  fi
+
+  echo
+  info "正在重建 atrust-${num}（保留数据）..."
+  if ! docker_compose_cmd up -d --force-recreate "atrust-${num}"; then
+    err "重建 atrust-${num} 失败。"
+    hint "建议检查 /dev/net/tun 与 NET_ADMIN 是否可用。"
+    return 0
+  fi
+  ok "已重建 atrust-${num}（数据保留）。"
+}
+
 show_status() {
   require_config || return 0
   if ! docker_alive; then
@@ -424,44 +670,161 @@ show_status() {
   mapfile -t lines <<< "$(docker_compose_cmd ps --format '{{.Service}}|{{.State}}' 2>/dev/null || true)"
 
   local line svc state n running=0
-  for line in "${lines[@]}"; do
-    [[ -z "$line" ]] && continue
-    svc="${line%%|*}"
-    state="${line#*|}"
-    n="${svc#atrust-}"
+  local -a names=()
+  # instance_numbers 返回空格分隔的编号列表，逐个处理
+  mapfile -t names < <(printf '%s' "$(instance_numbers)" | tr ' ' '\n')
+  for n in "${names[@]}"; do
     [[ "$n" =~ ^[0-9]+$ ]] || continue
+    svc="atrust-${n}"
+    state="exited"
+    for line in "${lines[@]}"; do
+      if [[ "${line%%|*}" == "$svc" ]]; then
+        state="${line#*|}"
+        break
+      fi
+    done
+    local pts
+    pts="S:$((SOCKS5_BASE + n - 1))  H:$((HTTP_BASE + n - 1))  V:$((VNC_BASE + n - 1))  T:$((TUNNEL_BASE + n - 1))"
     if [[ "$state" == "running" ]]; then
-      printf '%b%s%b  %s\n' "$C_GREEN" "$svc" "$C_NC" "$state"
+      printf '  %b%-10s%b %-9s %s\n' "$C_GREEN" "$svc" "$C_NC" "$state" "$pts"
       running=$((running + 1))
     else
-      printf '%s  %s\n' "$svc" "$state"
+      printf '  %-10s %-9s %s\n' "$svc" "$state" "$pts"
     fi
-    printf '  VNC:    127.0.0.1:%d\n' "$((VNC_BASE + n - 1))"
-    printf '  SOCKS5: 127.0.0.1:%d\n' "$((SOCKS5_BASE + n - 1))"
-    printf '  HTTP:   127.0.0.1:%d\n' "$((HTTP_BASE + n - 1))"
-    printf '  Tunnel: 127.0.0.1:%d\n' "$((TUNNEL_BASE + n - 1))"
   done
 
   printf '\n正在运行：%d / %s 个实例\n' "$running" "$count"
-
-  print_mihomo "$count"
   echo
 }
 
-print_mihomo() {
-  local count=$1 n
-  if (( count <= 0 )); then
-    return 0
+# Mihomo JS 覆写配置：模板 main() 原样保留，端口按真实 SOCKS5_BASE，
+# 用户配置段留空并带一行注释示例。
+write_mihomo_override() {
+  local MJ="${ATRUST_HOME}/mihomo-override.js"
+  local ss=$1
+  cat > "${MJ}" <<EOF
+// =========================
+// 用户配置
+// =========================
+
+// 每个数组对应一个 aTrust 出口
+//
+// RULES[0] → aTrust-1 → 127.0.0.1:${ss}
+// RULES[1] → aTrust-2 → 127.0.0.1:$((ss + 1))
+// RULES[2] → aTrust-3 → 127.0.0.1:$((ss + 2))
+const RULES = [
+  // 示例：['192.168.5.0/24', '172.25.0.0/24', '10.11.2.0/24']
+]
+
+// hosts 配置：左边支持通配符，右边是实际解析到的 IP
+const HOSTS = [
+  // 示例：['*.10.11.2.10.nip.io', '10.11.2.10']
+]
+
+// 不经过 fake-ip 的域名
+const FAKE_IP_FILTER = [
+  // 示例：'+.tianhe-tech.com', '+.nip.io', '+.nscc-tj.cn'
+]
+
+// =========================
+// 以下内容无需修改
+// =========================
+
+function main(config) {
+  // =========================
+  // aTrust 节点
+  // =========================
+
+  config.proxies = config.proxies || []
+
+  for (let i = 0; i < RULES.length; i++) {
+    const name = \`aTrust-\${i + 1}\`
+    const port = ${ss} + i
+
+    if (!config.proxies.some((p) => p.name === name)) {
+      config.proxies.push({
+        name,
+        type: 'socks5',
+        server: '127.0.0.1',
+        port,
+      })
+    }
+  }
+
+  // =========================
+  // IP 分流规则
+  // =========================
+
+  config.rules = config.rules || []
+
+  const rules = []
+
+  for (let i = 0; i < RULES.length; i++) {
+    const proxy = \`aTrust-\${i + 1}\`
+
+    for (const cidr of RULES[i]) {
+      rules.push(\`IP-CIDR,\${cidr},\${proxy},no-resolve\`)
+    }
+  }
+
+  config.rules.unshift(...rules)
+
+  // =========================
+  // DNS
+  // =========================
+
+  config.dns = config.dns || {}
+
+  // fake-ip-filter
+  config.dns['fake-ip-filter'] = config.dns['fake-ip-filter'] || []
+
+  for (const domain of FAKE_IP_FILTER) {
+    if (!config.dns['fake-ip-filter'].includes(domain)) {
+      config.dns['fake-ip-filter'].push(domain)
+    }
+  }
+
+  // hosts
+  config.dns.hosts = config.dns.hosts || {}
+
+  for (const [domain, ip] of HOSTS) {
+    config.dns.hosts[domain] = ip
+  }
+
+  return config
+}
+EOF
+  printf '已生成 %s\n' "${MJ}"
+}
+
+mihomo_config() {
+  require_config || return 0
+  local ss="${SOCKS5_BASE}"
+  local MJ win
+
+  MJ="${ATRUST_HOME}/mihomo-override.js"
+  backup_compose
+
+  write_mihomo_override "${ss}"
+  ok "Mihomo 覆写文件已生成：${MJ}"
+
+  # Windows 可点击路径（WSL 下可转成 \\wsl.localhost\... ）
+  win=""
+  if command -v wslpath >/dev/null 2>&1; then
+    win="$(wslpath -w "${MJ}" 2>/dev/null || true)"
   fi
+
   echo
-  echo "Mihomo SOCKS5 节点示例："
+  echo "在 Windows 中打开并复制（可点击）："
+  if [[ -n "$win" ]]; then
+    printf '  UNC 路径：  %s\n' "$win"
+    printf '  file 链接： file:///%s\n' "$(printf '%s' "$win" | sed 's#\\#/#g; s#^/##')"
+  fi
+  printf '  WSL 路径：  %s\n' "${MJ}"
   echo
-  for ((n = 1; n <= count; n++)); do
-    printf '  - name: aTrust-%d\n' "$n"
-    printf '    type: socks5\n'
-    printf '    server: 127.0.0.1\n'
-    printf '    port: %d\n' "$((SOCKS5_BASE + n - 1))"
-  done
+  hint "打开文件 → 全选复制 → 粘贴到 Mihomo / Clash Verge 的「覆写配置」。"
+  hint "RULES / HOSTS / FAKE_IP_FILTER 按需填写即可（已留注释示例，可留空）。"
+  cleanup_compose
 }
 
 start_all() {
@@ -505,15 +868,15 @@ view_logs() {
   echo "输入实例编号，例如 1。直接回车查看全部实例。"
   echo
   echo "实例:"
-  for ((i = 1; i <= count; i++)); do
-    printf '  atrust-%d\n' "$i"
+  for i in $(instance_numbers); do
+    printf '  atrust-%s\n' "$i"
   done
   printf '\n请输入实例编号（回车查看全部）: '
   IFS= read -r num || return 0
 
   local -a target=()
   if [[ -n "$num" ]]; then
-    if [[ "$num" =~ ^[0-9]+$ ]] && (( num >= 1 )) && (( num <= count )); then
+    if [[ "$num" =~ ^[0-9]+$ ]] && instance_exists "$num"; then
       target=("atrust-${num}")
     else
       warn "无效编号「${num}」，改为查看全部实例。"
@@ -525,38 +888,17 @@ view_logs() {
   docker_compose_cmd logs -f "${target[@]+"${target[@]}"}" || true
 }
 
-delete_containers() {
+# 删除全部实例：可选择是否删除数据，需输入 DELETE 确认（原 7/8 两项合并）
+delete_all() {
   require_config || return 0
-  echo
-  echo "这会删除所有 aTrust 容器，但保留登录数据目录（atrust-data-*）。"
-  if ! ask_yn "确认？"; then
-    echo "已取消。"
-    return 0
-  fi
-  if ! docker_compose_cmd down; then
-    err "docker compose down 失败。"
-    return 0
-  fi
-  ok "已删除所有 aTrust 容器（数据已保留）。"
-}
-
-destroy_all() {
-  if [[ -z "${ATRUST_HOME}" || "${ATRUST_HOME}" == "/" || "${ATRUST_HOME}" == "${HOME}" ]]; then
-    err "ATRUST_HOME（${ATRUST_HOME}）是危险路径，禁止完全删除。"
-    return 0
-  fi
-  if [[ ! -e "${COMPOSE_FILE}" ]] && [[ ! -e "${ATRUST_HOME}" ]]; then
-    err "没有可删除的内容。"
-    return 0
-  fi
 
   echo
-  warn "⚠ 危险操作！以下内容将被永久删除："
-  printf '  - 所有 aTrust 容器\n'
-  printf '  - %s\n' "${COMPOSE_FILE}"
-  printf '  - %s\n' "${ENV_FILE}"
-  printf '  - %s/atrust-data-*\n' "${ATRUST_HOME}"
-  echo "此操作不可恢复！"
+  warn "将删除所有 aTrust 容器。"
+  local dirdel=""
+  if ask_yn "是否同时删除数据目录（atrust-data-*）？"; then
+    dirdel="y"
+  fi
+
   printf '\n请完整输入 DELETE 以确认: '
   local ans
   IFS= read -r ans || return 0
@@ -566,25 +908,29 @@ destroy_all() {
     return 0
   fi
 
-  info "正在移除容器 ..."
-  if [[ -f "${COMPOSE_FILE}" ]]; then
-    docker_compose_cmd down --remove-orphans || true
-  fi
-
-  info "正在删除数据目录 ..."
-  if rm -rf "${ATRUST_HOME}" 2>/dev/null; then
-    ok "已完全删除 ${ATRUST_HOME}。"
+  info "正在移除所有容器 ..."
+  if ! docker_compose_cmd down --remove-orphans; then
+    err "docker compose down 失败。"
     return 0
   fi
 
-  warn "普通删除失败（数据目录中可能存在 root 属主的文件），尝试 sudo ..."
-  if command -v sudo >/dev/null 2>&1 && sudo rm -rf "${ATRUST_HOME}" 2>/dev/null; then
-    ok "已通过 sudo 完全删除 ${ATRUST_HOME}。"
+  if [[ -n "$dirdel" ]]; then
+    info "正在删除数据目录 ..."
+    if rm -rf "${ATRUST_HOME}" 2>/dev/null; then
+      ok "已完全删除（容器 + 数据）。"
+      return 0
+    fi
+    warn "普通删除失败（可能存在 root 属主文件），尝试 sudo ..."
+    if command -v sudo >/dev/null 2>&1 && sudo rm -rf "${ATRUST_HOME}" 2>/dev/null; then
+      ok "已通过 sudo 完全删除（容器 + 数据）。"
+      return 0
+    fi
+    err "数据目录删除失败。"
+    hint "请手动执行： sudo rm -rf \"${ATRUST_HOME}\""
     return 0
   fi
 
-  err "删除失败。"
-  hint "请手动执行： sudo rm -rf \"${ATRUST_HOME}\""
+  ok "已删除所有 aTrust 容器（数据已保留）。"
 }
 
 update_image() {
@@ -612,24 +958,27 @@ show_menu() {
   cat <<'MENU'
 
 ╔══════════════════════════════════════════╗
-║          aTrust Manager v0.1.0           ║
+║          aTrust Manager v0.2.0           ║
 ╠══════════════════════════════════════════╣
 ║                                          ║
 ║  1. 创建 / 更新 aTrust 实例              ║
-║  2. 查看实例状态                         ║
-║  3. 启动所有实例                         ║
-║  4. 停止所有实例                         ║
-║  5. 重启所有实例                         ║
-║  6. 查看日志                             ║
-║  7. 删除所有容器（保留数据）             ║
-║  8. 完全删除（容器 + 数据）              ║
-║  9. 更新 Docker 镜像                     ║
+║  2. 添加单个实例                         ║
+║  3. 删除单个实例                         ║
+║  4. 重建单个实例                         ║
+║  5. 查看实例状态                         ║
+║  6. 启动所有实例                         ║
+║  7. 停止所有实例                         ║
+║  8. 重启所有实例                         ║
+║  9. 查看日志                             ║
+║ 10. 删除全部实例                         ║
+║ 11. 更新 Docker 镜像                     ║
+║ 12. Mihomo 配置输出                      ║
 ║  0. 退出                                 ║
 ║                                          ║
 ╚══════════════════════════════════════════╝
 
 MENU
-  printf '请选择 [0-9]: '
+  printf '请选择 [0-12]: '
 }
 
 usage() {
@@ -643,7 +992,7 @@ usage() {
 
 不带参数直接运行将进入交互式菜单。
 
-一键运行（部署到静态站点后）：
+一键运行：
   curl -fsSL https://am.voemp.top/atrust.sh | bash
 EOF
 }
@@ -677,17 +1026,20 @@ main() {
     show_menu
     IFS= read -r choice || break
     case "$choice" in
-      1) create_instances ;;
-      2) show_status ;;
-      3) start_all ;;
-      4) stop_all ;;
-      5) restart_all ;;
-      6) view_logs ;;
-      7) delete_containers ;;
-      8) destroy_all ;;
-      9) update_image ;;
+      1) ( create_instances ) ;;
+      2) ( add_instance ) ;;
+      3) ( delete_instance ) ;;
+      4) ( rebuild_instance ) ;;
+      5) ( show_status ) ;;
+      6) ( start_all ) ;;
+      7) ( stop_all ) ;;
+      8) ( restart_all ) ;;
+      9) ( view_logs ) ;;
+      10) ( delete_all ) ;;
+      11) ( update_image ) ;;
+      12) ( mihomo_config ) ;;
       0) echo; ok "再见。"; exit 0 ;;
-      *) warn "无效选项「${choice}」，请输入 0-9。" ;;
+      *) warn "无效选项「${choice}」，请输入 0-12。" ;;
     esac
     wait_return
   done

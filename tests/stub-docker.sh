@@ -48,6 +48,22 @@ svc_state_set() {
   mv -f "$STATE.tmp" "$STATE"
 }
 
+svc_state_remove() {
+  local svc=$1
+  grep -vF "${svc}:" "$STATE" > "$STATE.tmp" 2>/dev/null || true
+  mv -f "$STATE.tmp" "$STATE"
+}
+
+# 从参数中挑出 atrust-N 形式的显式服务名（无则为空）
+explicit_svcs() {
+  local a
+  for a in "${@:-}"; do
+    if [[ "$a" == atrust-* ]]; then
+      printf '%s\n' "$a"
+    fi
+  done
+}
+
 # 从 compose 文件提取 atrust-N 服务名
 compose_services() {
   [[ -f "$compose_file" ]] || return 0
@@ -100,20 +116,39 @@ case "$cmd" in
         exit 0
         ;;
       stop)
-        while IFS= read -r s; do
+        targets=()
+        mapfile -t targets < <(explicit_svcs "${rest[@]:-}")
+        if (( ${#targets[@]} == 0 )); then
+          mapfile -t targets < <(state_services)
+        fi
+        for s in "${targets[@]}"; do
           [[ -n "$s" ]] || continue
           svc_state_set "$s" exited
-        done < <(state_services)
+        done
         exit 0
         ;;
       start)
-        while IFS= read -r s; do
+        targets=()
+        mapfile -t targets < <(explicit_svcs "${rest[@]:-}")
+        if (( ${#targets[@]} == 0 )); then
+          mapfile -t targets < <(state_services)
+        fi
+        for s in "${targets[@]}"; do
           [[ -n "$s" ]] || continue
           svc_state_set "$s" running
-        done < <(state_services)
+        done
         exit 0
         ;;
       restart)
+        exit 0
+        ;;
+      rm)
+        targets=()
+        mapfile -t targets < <(explicit_svcs "${rest[@]:-}")
+        for s in "${targets[@]}"; do
+          [[ -n "$s" ]] || continue
+          svc_state_remove "$s"
+        done
         exit 0
         ;;
       down)

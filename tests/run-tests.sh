@@ -106,7 +106,7 @@ echo
 echo "--- 0. 命令行选项 ---"
 
 out="$(bash "${MANAGER}" --version 2>&1 || true)"
-check "$(contains "$out" "atrust-manager 0.1.0")" "0.1 --version 输出版本号" "atrust-manager 0.1.0"
+check "$(contains "$out" "atrust-manager 0.2.0")" "0.1 --version 输出版本号" "atrust-manager 0.2.0"
 
 out="$(bash "${MANAGER}" --help 2>&1 || true)"
 check "$(contains "$out" "用法")" "0.2 --help 显示用法" "用法"
@@ -175,7 +175,7 @@ check "$(contains "$C" "restart: unless-stopped")" "3.13 restart 策略" "restar
 check "$([ -d "${HOMEDIR}/atrust-data-1" ] && echo 1 || echo 0)" "3.14 数据目录已创建" "存在 atrust-data-1"
 check "$([ "$(line_of ' config')" -lt "$(line_of ' pull')" ] && [ "$(line_of ' pull')" -lt "$(line_of ' up -d')" ] && echo 1 || echo 0)" "3.15 命令顺序 config→pull→up -d" "config < pull < up -d"
 check "$(contains "$out" "aTrust 实例")" "3.16 状态展示" "aTrust 实例"
-check "$(contains "$out" "Mihomo")" "3.17 Mihomo 示例" "Mihomo"
+check "$([ "$(printf '%s' "$out" | grep -cF '覆写文件' || true)" = "0" ] && [ "$(printf '%s' "$out" | grep -cF 'SOCKS5 节点示例' || true)" = "0" ] && echo 1 || echo 0)" "3.17 状态输出不含 Mihomo（由菜单 12 单独输出）" "状态不含 Mihomo 覆写/示例"
 
 # ---------------------------------------------------------------
 echo "--- 4. Test 2：创建 2 个实例，端口递增 ---"
@@ -194,7 +194,7 @@ check "$([ -d "${HOMEDIR}/atrust-data-2" ] && echo 1 || echo 0)" "4.6 第二个�
 # ---------------------------------------------------------------
 echo "--- 5. Test 3：停止所有实例 ---"
 
-capture '4\nk0\n' # 复用上一场景的状态（2 个实例 running）
+capture '7\nk0\n' # 复用上一场景的状态（2 个实例 running）
 out="$CAP"
 check "$(contains "$out" "已停止")" "5.1 停止提示" "已停止"
 check "$([ "$(grep -c ':running$' "$STUB_STATE" 2>/dev/null || true)" = "0" ] && \
@@ -203,33 +203,35 @@ check "$([ "$(grep -c ':running$' "$STUB_STATE" 2>/dev/null || true)" = "0" ] &&
 # ---------------------------------------------------------------
 echo "--- 6. Test 4：启动所有实例 ---"
 
-capture '3\nk0\n'
+capture '6\nk0\n'
 out="$CAP"
 check "$(contains "$out" "已启动")" "6.1 启动提示" "已启动"
 check "$([ "$(grep -c ':running$' "$STUB_STATE" 2>/dev/null || true)" = "2" ] && echo 1 || echo 0)" "6.2 两个实例恢复 running" "running=2"
 
 # ---------------------------------------------------------------
-echo "--- 7. Test 5：删除容器（保留数据） ---"
+echo "--- 7. 删除全部实例（菜单 10：删除容器，保留数据） ---"
 
-capture '7\ny\nk0\n'
+# 菜单 10 → 数据? n → DELETE 确认 → 只删容器保留数据
+capture '10\nn\nDELETE\nk0\n'
 out="$CAP"
 check "$(contains "$out" "已删除所有 aTrust 容器")" "7.1 删除提示" "已删除所有 aTrust 容器"
 check "$([ "$(wc -l < "$STUB_STATE" 2>/dev/null || echo 0)" = "0" ] && echo 1 || echo 0)" "7.2 状态已清空（容器删除）" "state 空"
 check "$([ -d "${HOMEDIR}/atrust-data-1" ] && [ -d "${HOMEDIR}/atrust-data-2" ] && echo 1 || echo 0)" "7.3 数据目录仍存在" "atrust-data-1/2 存在"
 check "$([ -f "${COMPOSE}" ] && [ -f "${ENVF}" ] && echo 1 || echo 0)" "7.4 compose 与 .env 保留" "compose.yaml / .env 存在"
 
+# 删除全部实例时取消（DELETE 文本不匹配）
+capture '10\nn\nwrongtext\nk0\n'
+out="$CAP"
+check "$(contains "$out" "已取消")" "7.5 确认文本不匹配则取消" "已取消"
+check "$([ -e "${HOMEDIR}" ] && echo 1 || echo 0)" "7.6 未删除任何内容" "目录仍存在"
+
 # ---------------------------------------------------------------
-echo "--- 8. Test 6：完全删除（需输入 DELETE，且不可逆） ---"
+echo "--- 8. 删除全部实例（菜单 10：容器 + 数据，不可逆） ---"
 
-capture '8\nwrongtext\nk0\n'
+capture '10\ny\nDELETE\nk0\n'
 out="$CAP"
-check "$(contains "$out" "已取消")" "8.1 确认文本不匹配则取消" "已取消"
-check "$([ -e "${HOMEDIR}" ] && echo 1 || echo 0)" "8.2 未删除任何内容" "目录仍存在"
-
-capture '8\nDELETE\nk0\n'
-out="$CAP"
-check "$(contains "$out" "已完全删除")" "8.3 DELETE 后完全删除" "已完全删除"
-check "$([ ! -e "${HOMEDIR}" ] && echo 1 || echo 0)" "8.4 目录被删除" "目录不存在"
+check "$(contains "$out" "已完全删除")" "8.1 DELETE 后完全删除" "已完全删除"
+check "$([ ! -e "${HOMEDIR}" ] && echo 1 || echo 0)" "8.2 目录被删除" "目录不存在"
 
 # ---------------------------------------------------------------
 echo "--- 9. Test 7：密码不一致要求重新输入 ---"
@@ -290,14 +292,14 @@ check "$(contains "$out" "无效选项")" "12.1 无效选项提示" "无效选�
 # ---------------------------------------------------------------
 echo "--- 13. 日志查看（结束后回到菜单） ---"
 
-# 输入菜单 6 → 实例 2 → stub 跟踪 2 秒 → 回到菜单；3 秒后再发 0 退出
+# 输入菜单 9 → 实例 2 → stub 跟踪 2 秒 → 回到菜单；3 秒后再发 0 退出
 set +e
-CAP="$( { printf '6\n2\n'; sleep 3; printf 'k0\n'; } | timeout 40 script -qec "bash '${MANAGER}'" /dev/null 2>&1 )"
+CAP="$( { printf '9\n2\n'; sleep 3; printf 'k0\n'; } | timeout 40 script -qec "bash '${MANAGER}'" /dev/null 2>&1 )"
 RC=$?
 set -e
 out="$CAP"
 check "$(contains "$out" "[stub] 模拟日志")" "13.1 显示日志" "[stub] 模拟日志"
-check "$([ "$(count_of "$out" "请选择 [0-9]:")" -ge 2 ] && echo 1 || echo 0)" "13.2 日志结束后回到主菜单" "请选择出现 ≥2 次"
+check "$([ "$(count_of "$out" "请选择 [0-")" -ge 2 ] && echo 1 || echo 0)" "13.2 日志结束后回到主菜单" "请选择出现 ≥2 次"
 
 # ---------------------------------------------------------------
 echo "--- 14. curl | bash 一键运行（管道模式） ---"
@@ -314,6 +316,101 @@ check "$(contains "$out" "请输入要创建的 aTrust 实例数量")" "14.1 管
 check "$(contains "$out" "创建完成")" "14.2 管道模式下创建成功" "创建完成"
 C="$(cat "${COMPOSE}" 2>/dev/null || true)"
 check "$([ "$(printf '%s' "$C" | grep -cF 'container_name: atrust-' || true)" = "2" ] && echo 1 || echo 0)" "14.3 管道模式生成 2 个实例" "container_name 数量 = 2"
+
+# ---------------------------------------------------------------
+echo "--- 15. 添加单个实例（默认最大编号+1） ---"
+
+reset_home
+capture '1\n2\npw\npw\nk0\n'   # 先创建 2 个实例
+capture '2\n\nk0\n'            # 菜单 2：直接回车 → max+1 = 3
+out="$CAP"
+C="$(cat "${COMPOSE}" 2>/dev/null || true)"
+check "$(contains "$out" "已添加实例")" "15.1 添加提示" "已添加实例"
+check "$([ "$(printf '%s' "$C" | grep -cF 'container_name: atrust-' || true)" = "3" ] && echo 1 || echo 0)" "15.2 共 3 个实例" "container_name 数量 = 3"
+SS=$((S0 + 2))
+check "$(contains "$C" "127.0.0.1:${SS}:1080")" "15.3 新实例 SOCKS5=${SS}" "127.0.0.1:${SS}:1080"
+check "$([ -d "${HOMEDIR}/atrust-data-3" ] && echo 1 || echo 0)" "15.4 数据目录 atrust-data-3" "存在 atrust-data-3"
+check "$(contains "$out" "空缺")" "15.5 展示空缺可视化" "空缺"
+
+# ---------------------------------------------------------------
+echo "--- 16. 删除单个实例（保留数据，留空位） ---"
+
+# 上节场景：1,2,3；删除编号 2，数据保留
+capture '3\n2\nn\nDELETE\nk0\n'
+out="$CAP"
+C="$(cat "${COMPOSE}" 2>/dev/null || true)"
+check "$(contains "$out" "已删除实例")" "16.1 删除提示" "已删除实例"
+check "$([ -d "${HOMEDIR}/atrust-data-2" ] && echo 1 || echo 0)" "16.2 数据目录保留" "atrust-data-2 存在"
+check "$([ "$(printf '%s' "$C" | grep -cF 'container_name: atrust-' || true)" = "2" ] && echo 1 || echo 0)" "16.3 剩 2 个实例" "container_name 数量 = 2"
+check "$(contains "$C" "container_name: atrust-3")" "16.4 atrust-3 保留（编号不动）" "atrust-3"
+check "$(contains "$C" "container_name: atrust-1")" "16.5 atrust-1 保留" "atrust-1"
+
+# 删除单个实例：DELETE 文本不匹配则取消
+capture '3\n3\nn\nwrongtext\nk0\n'
+out="$CAP"
+check "$(contains "$out" "已取消")" "16.6 确认文本不匹配则取消" "已取消"
+C="$(cat "${COMPOSE}" 2>/dev/null || true)"
+check "$(contains "$C" "container_name: atrust-3")" "16.7 取消后 atrust-3 仍在" "atrust-3"
+
+# ---------------------------------------------------------------
+echo "--- 17. 删除单个实例（同时删除数据） ---"
+
+capture '3\n3\ny\nDELETE\nk0\n'
+out="$CAP"
+check "$(contains "$out" "已删除实例")" "17.1 删除提示" "已删除实例"
+check "$([ ! -e "${HOMEDIR}/atrust-data-3" ] && echo 1 || echo 0)" "17.2 数据目录已删除" "atrust-data-3 不存在"
+check "$([ -d "${HOMEDIR}/atrust-data-1" ] && echo 1 || echo 0)" "17.3 其他数据目录保留" "atrust-data-1 存在"
+
+# ---------------------------------------------------------------
+echo "--- 18. 添加单个实例（指定空缺编号） ---"
+
+# 当前编号：1（空缺 2,3）
+capture '2\n2\nk0\n'
+out="$CAP"
+C="$(cat "${COMPOSE}" 2>/dev/null || true)"
+check "$(contains "$out" "空缺")" "18.1 展示空缺可视化" "空缺"
+check "$(contains "$C" "container_name: atrust-2")" "18.2 补齐空缺 atrust-2" "atrust-2"
+SS=$((S0 + 1))
+check "$(contains "$C" "127.0.0.1:${SS}:1080")" "18.3 空缺端口 SOCKS5=${SS}" "127.0.0.1:${SS}:1080"
+check "$(contains "$C" "container_name: atrust-1")" "18.4 atrust-1 不受影响" "atrust-1"
+
+# ---------------------------------------------------------------
+echo "--- 19. 重建单个实例 ---"
+
+capture '4\n1\nk0\n'
+out="$CAP"
+check "$(contains "$out" "已重建")" "19.1 重建提示" "已重建"
+check "$([ "$(line_of '--force-recreate atrust-1')" != "100000" ] && echo 1 || echo 0)" "19.2 调用 force-recreate atrust-1" "日志含 --force-recreate atrust-1"
+
+# ---------------------------------------------------------------
+echo "--- 20. Mihomo 配置输出 ---"
+
+reset_home
+capture '1\n2\npw\npw\nk0\n'
+capture '12\nk0\n'
+out="$CAP"
+MJ="${HOMEDIR}/mihomo-override.js"
+check "$([ -f "${MJ}" ] && echo 1 || echo 0)" "20.1 生成 mihomo-override.js" "文件存在"
+MJ_C="$(cat "${MJ}" 2>/dev/null || true)"
+check "$(contains "$MJ_C" "const port = ${SOCKS5_BASE} + i")" "20.2 端口使用真实 SOCKS5_BASE=${SOCKS5_BASE}" "const port = ${SOCKS5_BASE} + i"
+check "$(contains "$MJ_C" "function main(config)")" "20.3 main() 原样保留" "function main(config)"
+check "$(contains "$MJ_C" "const RULES = [")" "20.4 RULES 段保留" "const RULES = ["
+check "$(contains "$MJ_C" "const HOSTS = [")" "20.5 HOSTS 段保留" "const HOSTS = ["
+check "$(contains "$MJ_C" "const FAKE_IP_FILTER = [")" "20.6 FAKE_IP_FILTER 段保留" "const FAKE_IP_FILTER = ["
+check "$(contains "$MJ_C" "// 示例")" "20.7 用户配置留注释示例" "// 示例"
+check "$(contains "$out" "mihomo-override.js")" "20.8 输出文件路径" "mihomo-override.js"
+
+# ---------------------------------------------------------------
+echo "--- 21. 查看实例状态（无边框、无 Mihomo） ---"
+
+capture '5\nk0\n'
+out="$CAP"
+check "$([ "$(printf '%s' "$out" | grep -cF '┌' || true)" = "0" ] && echo 1 || echo 0)" "21.1 状态无表格边框" "状态不含 ┌"
+check "$(contains "$out" "atrust-1")" "21.2 显示实例 atrust-1" "atrust-1"
+check "$(contains "$out" "atrust-2")" "21.3 显示实例 atrust-2" "atrust-2"
+check "$(contains "$out" "${S0}")" "21.4 显示 SOCKS5 端口 ${S0}" "${S0}"
+check "$(contains "$out" "运行")" "21.5 运行汇总" "运行"
+check "$([ "$(printf '%s' "$out" | grep -cF '覆写文件' || true)" = "0" ] && echo 1 || echo 0)" "21.6 状态输出不含 Mihomo 覆写文件" "状态不含 Mihomo 覆写文件"
 
 # ---------------------------------------------------------------
 echo
