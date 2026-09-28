@@ -106,7 +106,7 @@ echo
 echo "--- 0. 命令行选项 ---"
 
 out="$(bash "${MANAGER}" --version 2>&1 || true)"
-check "$(contains "$out" "atrust-manager 0.3.0")" "0.1 --version 输出版本号" "atrust-manager 0.3.0"
+check "$(contains "$out" "atrust-manager 0.3.1")" "0.1 --version 输出版本号" "atrust-manager 0.3.1"
 
 out="$(bash "${MANAGER}" --help 2>&1 || true)"
 check "$(contains "$out" "用法")" "0.2 --help 显示用法" "用法"
@@ -141,7 +141,7 @@ check "$([ "$RC" != "0" ] && echo 1 || echo 0)" "1.3 Docker 不可用时脚本�
 echo "--- 2. 非法数量输入不会退出 ---"
 
 reset_home
-capture '1\n0\n5\npassw0rd\npassw0rd\nk0\n'
+capture '1\n0\n5\npassw0rd\npassw0rd\n0\n0\n'   # 创建→数量0非法→5
 out="$CAP"
 check "$(contains "$out" "输入无效")" "2.1 数量=0 时提示输入无效并重新询问" "输入无效"
 check "$(contains "$out" "创建完成")" "2.2 数量=5 后正常创建" "创建完成"
@@ -150,7 +150,7 @@ check "$(contains "$out" "创建完成")" "2.2 数量=5 后正常创建" "创建
 echo "--- 3. Test 1：创建 1 个实例 ---"
 
 reset_home
-capture '1\n1\npwtest\npwtest\nk0\n'
+capture '1\n1\npwtest\npwtest\n0\n0\n'
 out="$CAP"
 check "$(contains "$out" "已生成")" "3.1 生成 compose" "已生成"
 check "$(contains "$out" "创建完成")" "3.2 创建完成提示" "创建完成"
@@ -181,7 +181,7 @@ check "$([ "$(printf '%s' "$out" | grep -cF '覆写文件' || true)" = "0" ] && 
 echo "--- 4. Test 2：创建 2 个实例，端口递增 ---"
 
 reset_home
-capture '1\n2\npw\npw\nk0\n'
+capture '1\n2\npw\npw\n0\n0\n'
 out="$CAP"
 C="$(cat "${COMPOSE}" 2>/dev/null || true)"
 check "$([ "$(printf '%s' "$C" | grep -cF 'container_name: atrust-' || true)" = "2" ] && echo 1 || echo 0)" "4.1 两个 service" "container_name 数量 = 2"
@@ -194,7 +194,7 @@ check "$([ -d "${HOMEDIR}/atrust-data-2" ] && echo 1 || echo 0)" "4.6 第二个�
 # ---------------------------------------------------------------
 echo "--- 5. Test 3：停止所有实例 ---"
 
-capture '7\nk0\n' # 复用上一场景的状态（2 个实例 running）
+capture '2\n5\n0\n0\n' # 实例管理→停止所有（2 个实例 running）
 out="$CAP"
 check "$(contains "$out" "已停止")" "5.1 停止提示" "已停止"
 check "$([ "$(grep -c ':running$' "$STUB_STATE" 2>/dev/null || true)" = "0" ] && \
@@ -203,7 +203,7 @@ check "$([ "$(grep -c ':running$' "$STUB_STATE" 2>/dev/null || true)" = "0" ] &&
 # ---------------------------------------------------------------
 echo "--- 6. Test 4：启动所有实例 ---"
 
-capture '6\nk0\n'
+capture '2\n4\n0\n0\n'
 out="$CAP"
 check "$(contains "$out" "已启动")" "6.1 启动提示" "已启动"
 check "$([ "$(grep -c ':running$' "$STUB_STATE" 2>/dev/null || true)" = "2" ] && echo 1 || echo 0)" "6.2 两个实例恢复 running" "running=2"
@@ -212,7 +212,7 @@ check "$([ "$(grep -c ':running$' "$STUB_STATE" 2>/dev/null || true)" = "2" ] &&
 echo "--- 7. 删除全部实例（菜单 10：删除容器，保留数据） ---"
 
 # 菜单 10 → 数据? n → DELETE 确认 → 只删容器保留数据
-capture '10\nn\nDELETE\nk0\n'
+capture '5\nn\nDELETE\n0\n0\n'
 out="$CAP"
 check "$(contains "$out" "已删除所有 aTrust 容器")" "7.1 删除提示" "已删除所有 aTrust 容器"
 check "$([ "$(wc -l < "$STUB_STATE" 2>/dev/null || echo 0)" = "0" ] && echo 1 || echo 0)" "7.2 状态已清空（容器删除）" "state 空"
@@ -220,7 +220,7 @@ check "$([ -d "${HOMEDIR}/atrust-data-1" ] && [ -d "${HOMEDIR}/atrust-data-2" ] 
 check "$([ -f "${COMPOSE}" ] && [ -f "${ENVF}" ] && echo 1 || echo 0)" "7.4 compose 与 .env 保留" "compose.yaml / .env 存在"
 
 # 删除全部实例时取消（DELETE 文本不匹配）
-capture '10\nn\nwrongtext\nk0\n'
+capture '5\nn\nwrongtext\n0\n0\n'
 out="$CAP"
 check "$(contains "$out" "已取消")" "7.5 确认文本不匹配则取消" "已取消"
 check "$([ -e "${HOMEDIR}" ] && echo 1 || echo 0)" "7.6 未删除任何内容" "目录仍存在"
@@ -228,7 +228,7 @@ check "$([ -e "${HOMEDIR}" ] && echo 1 || echo 0)" "7.6 未删除任何内容" "
 # ---------------------------------------------------------------
 echo "--- 8. 删除全部实例（菜单 10：容器 + 数据，不可逆） ---"
 
-capture '10\ny\nDELETE\nk0\n'
+capture '5\ny\nDELETE\n0\n0\n'
 out="$CAP"
 check "$(contains "$out" "已完全删除")" "8.1 DELETE 后完全删除" "已完全删除"
 check "$([ ! -e "${HOMEDIR}" ] && echo 1 || echo 0)" "8.2 目录被删除" "目录不存在"
@@ -237,7 +237,7 @@ check "$([ ! -e "${HOMEDIR}" ] && echo 1 || echo 0)" "8.2 目录被删除" "目�
 echo "--- 9. Test 7：密码不一致要求重新输入 ---"
 
 reset_home
-capture '1\n1\npwA\npwB\nrealmatch\nrealmatch\nk0\n'
+capture '1\n1\npwA\npwB\nrealmatch\nrealmatch\n0\n0\n'
 out="$CAP"
 check "$(contains "$out" "两次输入不一致")" "9.1 提示密码不一致" "两次输入不一致"
 check "$(contains "$(cat "${HOMEDIR}/.env" 2>/dev/null || true)" "ATRUST_PASSWORD='realmatch'")" "9.2 最终保存正确密码" "ATRUST_PASSWORD='realmatch'"
@@ -260,7 +260,7 @@ except OSError:
 PY
 LISTENER_PID=$!
 sleep 0.5
-capture "1\n1\nk0\n"
+capture "1\n1\n1\n0\n0\n"
 out="$CAP"
 check "$(contains "$out" "端口 ${S0} 已被占用")" "10.1 提示端口冲突" "端口 ${S0} 已被占用"
 check "$(contains "$out" "检测到端口冲突")" "10.2 提示停止创建" "检测到端口冲突"
@@ -272,8 +272,8 @@ wait "${LISTENER_PID}" 2>/dev/null || true
 echo "--- 11. 已有配置重新生成（数量变化） ---"
 
 reset_home
-capture '1\n1\npw\npw\nk0\n' # 先创建 1 个
-capture '1\n3\ny\nnewpw\nnewpw\nk0\n'
+capture '1\n1\npw\npw\n0\n0\n' # 先创建 1 个
+capture '1\n3\ny\nnewpw\nnewpw\n0\n0\n'
 out="$CAP"
 check "$(contains "$out" "检测到已有 aTrust 配置")" "11.1 提示已有配置" "检测到已有 aTrust 配置"
 check "$(contains "$out" "重新生成配置为 3 个实例")" "11.2 提示新数量" "重新生成配置为 3 个实例"
@@ -285,21 +285,30 @@ check "$([ -d "${HOMEDIR}/atrust-data-3" ] && echo 1 || echo 0)" "11.5 新建数
 # ---------------------------------------------------------------
 echo "--- 12. 无效菜单选项 ---"
 
-capture 'x\nk0\n'
+capture 'x\n0\n0\n'
 out="$CAP"
 check "$(contains "$out" "无效选项")" "12.1 无效选项提示" "无效选项"
 
 # ---------------------------------------------------------------
 echo "--- 13. 日志查看（结束后回到菜单） ---"
 
-# 输入菜单 9 → 实例 2 → stub 跟踪 2 秒 → 回到菜单；3 秒后再发 0 退出
+# 输入主菜单 4 日志 → 实例 2 → stub 跟踪 2 秒 → 回到二级；3 秒后再发 0 退出
 set +e
-CAP="$( { printf '9\n2\n'; sleep 3; printf 'k0\n'; } | timeout 40 script -qec "bash '${MANAGER}'" /dev/null 2>&1 )"
+CAP="$( { printf '4\n2\n'; sleep 3; printf '0\n'; } | timeout 40 script -qec "bash '${MANAGER}'" /dev/null 2>&1 )"
 RC=$?
 set -e
 out="$CAP"
 check "$(contains "$out" "[stub] 模拟日志")" "13.1 显示日志" "[stub] 模拟日志"
-check "$([ "$(count_of "$out" "请选择 [0-")" -ge 2 ] && echo 1 || echo 0)" "13.2 日志结束后回到主菜单" "请选择出现 ≥2 次"
+check "$([ "$(count_of "$out" "请选择 [0-")" -ge 2 ] && echo 1 || echo 0)" "13.2 日志结束后回到菜单" "请选择出现 ≥2 次"
+
+# ---------------------------------------------------------------
+echo "--- 13.5 二级菜单 0 返回主菜单：无「按任意键」提示 ---"
+
+# 进入实例管理 → 0 返回 → 0 退出；若二级菜单返回触发 wait_return，输出会含「按任意键」
+capture '2\n0\n0\n'
+out="$CAP"
+check "$([ "$(printf '%s' "$out" | grep -cF '按任意键' || true)" = "0" ] && echo 1 || echo 0)" "13.5.1 二级菜单返回不提示按任意键" "无「按任意键」"
+check "$([ "$(count_of "$out" "请选择 [0-")" -ge 2 ] && echo 1 || echo 0)" "13.5.2 返回后回到主菜单" "请选择出现 ≥2 次"
 
 # ---------------------------------------------------------------
 echo "--- 14. curl | bash 一键运行（管道模式） ---"
@@ -308,7 +317,7 @@ echo "--- 14. curl | bash 一键运行（管道模式） ---"
 # 必须能看到数量提示且创建成功（之前 ensure_tty 的 2>/dev/null 会吞掉数量提示）
 reset_home
 set +e
-CAP="$( printf '1\n2\npw\npw\nk0\n' | timeout 40 script -qec "cat '${MANAGER}' | bash" /dev/null 2>&1 )"
+CAP="$( printf '1\n2\npw\npw\n0\n0\n' | timeout 40 script -qec "cat '${MANAGER}' | bash" /dev/null 2>&1 )"
 RC=$?
 set -e
 out="$CAP"
@@ -321,8 +330,8 @@ check "$([ "$(printf '%s' "$C" | grep -cF 'container_name: atrust-' || true)" = 
 echo "--- 15. 添加单个实例（默认最大编号+1） ---"
 
 reset_home
-capture '1\n2\npw\npw\nk0\n'   # 先创建 2 个实例
-capture '2\n\nk0\n'            # 菜单 2：直接回车 → max+1 = 3
+capture '1\n2\npw\npw\n0\n0\n'   # 创建 2 个
+capture '2\n1\n\n0\n0\n'          # 实例管理→添加：直接回车 → max+1 = 3
 out="$CAP"
 C="$(cat "${COMPOSE}" 2>/dev/null || true)"
 check "$(contains "$out" "已添加实例")" "15.1 添加提示" "已添加实例"
@@ -336,7 +345,7 @@ check "$(contains "$out" "空缺")" "15.5 展示空缺可视化" "空缺"
 echo "--- 16. 删除单个实例（保留数据，留空位） ---"
 
 # 上节场景：1,2,3；删除编号 2，数据保留
-capture '3\n2\nn\nDELETE\nk0\n'
+capture '2\n2\n2\nn\nDELETE\n0\n0\n'
 out="$CAP"
 C="$(cat "${COMPOSE}" 2>/dev/null || true)"
 check "$(contains "$out" "已删除实例")" "16.1 删除提示" "已删除实例"
@@ -346,7 +355,7 @@ check "$(contains "$C" "container_name: atrust-3")" "16.4 atrust-3 保留（编�
 check "$(contains "$C" "container_name: atrust-1")" "16.5 atrust-1 保留" "atrust-1"
 
 # 删除单个实例：DELETE 文本不匹配则取消
-capture '3\n3\nn\nwrongtext\nk0\n'
+capture '2\n2\n3\nn\nwrongtext\n0\n0\n'
 out="$CAP"
 check "$(contains "$out" "已取消")" "16.6 确认文本不匹配则取消" "已取消"
 C="$(cat "${COMPOSE}" 2>/dev/null || true)"
@@ -355,7 +364,7 @@ check "$(contains "$C" "container_name: atrust-3")" "16.7 取消后 atrust-3 仍
 # ---------------------------------------------------------------
 echo "--- 17. 删除单个实例（同时删除数据） ---"
 
-capture '3\n3\ny\nDELETE\nk0\n'
+capture '2\n2\n3\ny\nDELETE\n0\n0\n'
 out="$CAP"
 check "$(contains "$out" "已删除实例")" "17.1 删除提示" "已删除实例"
 check "$([ ! -e "${HOMEDIR}/atrust-data-3" ] && echo 1 || echo 0)" "17.2 数据目录已删除" "atrust-data-3 不存在"
@@ -365,7 +374,7 @@ check "$([ -d "${HOMEDIR}/atrust-data-1" ] && echo 1 || echo 0)" "17.3 其他数
 echo "--- 18. 添加单个实例（指定空缺编号） ---"
 
 # 当前编号：1（空缺 2,3）
-capture '2\n2\nk0\n'
+capture '2\n1\n2\n0\n0\n'
 out="$CAP"
 C="$(cat "${COMPOSE}" 2>/dev/null || true)"
 check "$(contains "$out" "空缺")" "18.1 展示空缺可视化" "空缺"
@@ -377,7 +386,7 @@ check "$(contains "$C" "container_name: atrust-1")" "18.4 atrust-1 不受影响"
 # ---------------------------------------------------------------
 echo "--- 19. 重建单个实例 ---"
 
-capture '4\n1\nk0\n'
+capture '2\n3\n1\n0\n0\n'
 out="$CAP"
 check "$(contains "$out" "已重建")" "19.1 重建提示" "已重建"
 check "$([ "$(line_of '--force-recreate atrust-1')" != "100000" ] && echo 1 || echo 0)" "19.2 调用 force-recreate atrust-1" "日志含 --force-recreate atrust-1"
@@ -386,8 +395,8 @@ check "$([ "$(line_of '--force-recreate atrust-1')" != "100000" ] && echo 1 || e
 echo "--- 20. Mihomo 配置输出 ---"
 
 reset_home
-capture '1\n2\npw\npw\nk0\n'
-capture '12\nk0\n'
+capture '1\n2\npw\npw\n0\n0\n'   # 创建 2 个实例
+capture '7\n0\n0\n'             # 主菜单 7：Mihomo 配置输出
 out="$CAP"
 MJ="${HOMEDIR}/mihomo-override.js"
 check "$([ -f "${MJ}" ] && echo 1 || echo 0)" "20.1 生成 mihomo-override.js" "文件存在"
@@ -403,7 +412,7 @@ check "$(contains "$out" "mihomo-override.js")" "20.8 输出文件路径" "mihom
 # ---------------------------------------------------------------
 echo "--- 21. 查看实例状态（无边框、无 Mihomo） ---"
 
-capture '5\nk0\n'
+capture '3\n0\n0\n'
 out="$CAP"
 check "$([ "$(printf '%s' "$out" | grep -cF '┌' || true)" = "0" ] && echo 1 || echo 0)" "21.1 状态无表格边框" "状态不含 ┌"
 check "$(contains "$out" "atrust-1")" "21.2 显示实例 atrust-1" "atrust-1"
@@ -416,7 +425,7 @@ check "$([ "$(printf '%s' "$out" | grep -cF '覆写文件' || true)" = "0" ] && 
 echo "--- 22. 自启动配置（菜单 13） ---"
 
 out="$(bash "${MANAGER}" --version 2>&1 || true)"
-check "$(contains "$out" "atrust-manager 0.3.0")" "22.0 版本号 0.3.0" "atrust-manager 0.3.0"
+check "$(contains "$out" "atrust-manager 0.3.1")" "22.0 版本号 0.3.1" "atrust-manager 0.3.1"
 
 # 使用临时目录模拟 Windows Startup（不写真实启动文件夹）
 export AUTOSTART_VBS_DIR="${WORK}/startup"
@@ -425,7 +434,7 @@ mkdir -p "${AUTOSTART_VBS_DIR}"
 printf 'Set shell = CreateObject("WScript.Shell")\r\nshell.Run "wsl.exe -d Ubuntu --exec /bin/sleep infinity", 0, False\r\n' > "${AUTOSTART_VBS_DIR}/start-wsl.vbs"
 
 # 安装/检查：菜单 13 → 1
-capture '13\n1\nk0\n'
+capture '8\n1\n0\n0\n'
 out="$CAP"
 check "$(contains "$out" "自启动配置")" "22.1 菜单含自启动配置" "自启动配置"
 VBS="${AUTOSTART_VBS_DIR}/start-wsl.vbs"
@@ -438,13 +447,13 @@ check "$(contains "$out" "docker.service")" "22.5 检查 docker.service 自启" 
 check "$([ ! -e "${WORK}/systemd/atrust.service" ] && [ ! -e "/etc/systemd/system/atrust.service" ] && echo 1 || echo 0)" "22.6 不再创建 atrust.service" "不存在 atrust.service"
 
 # 查看：菜单 13 → 2
-capture '13\n2\nk0\n'
+capture '8\n2\n0\n0\n'
 out="$CAP"
 check "$(contains "$out" "start-wsl.vbs")" "22.7 查看含 vbs 路径" "start-wsl.vbs"
 check "$(contains "$out" "docker.service")" "22.8 查看含 docker.service 状态" "docker.service"
 
 # 移除：菜单 13 → 3 → 确认 y
-capture '13\n3\ny\nk0\n'
+capture '8\n3\ny\n0\n0\n'
 out="$CAP"
 check "$([ ! -f "${VBS}" ] && echo 1 || echo 0)" "22.9 移除后 vbs 删除" "start-wsl.vbs 不存在"
 check "$(contains "$out" "已移除")" "22.10 移除提示" "已移除"

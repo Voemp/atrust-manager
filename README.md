@@ -94,26 +94,35 @@ MAX_INSTANCES=20   # 实例数量上限
 
 ## 菜单说明
 
+**主菜单**：
+
 | 编号 | 功能 | 说明 |
 | --- | --- | --- |
 | 1 | 创建 / 更新实例 | 询问数量 → 端口冲突检查 → VNC 密码 → 生成 compose → 校验 → 拉取镜像 → 启动 |
-| 2 | 添加单个实例 | 默认追加到最大编号 + 1；也可输入空缺编号填空位；可视化展示现有/空缺编号 |
-| 3 | 删除单个实例 | 输入编号 → 删除容器，可选是否删除数据目录；**需输入 `DELETE` 确认**；剩余编号/端口保留（留空位） |
-| 4 | 重建单个实例 | `docker compose up -d --force-recreate atrust-N`，保留数据 |
-| 5 | 查看实例状态 | 展示每个实例的服务/状态/四个端口 + 运行汇总（无边框；不含 Mihomo 配置） |
-| 6 | 启动所有实例 | `docker compose up -d` |
-| 7 | 停止所有实例 | `docker compose stop`（保留容器与数据） |
-| 8 | 重启所有实例 | `docker compose restart` |
-| 9 | 查看日志 | 输入编号查看单个实例，直接回车查看全部；Ctrl-C 退出回到菜单 |
-| 10 | 删除全部实例 | 删除所有容器，可选是否同时删除数据；**需输入 `DELETE` 确认**（原「删除容器」「完全删除」两项合并） |
-| 11 | 更新 Docker 镜像 | `docker compose pull` + `up -d`，不删除数据 |
-| 12 | Mihomo 配置输出 | 生成 Mihomo **JS 覆写文件**，输出可点击的 Windows 路径（`\\wsl.localhost\...`）方便复制 |
-| 13 | 自启动配置 | ① 安装/检查：写入 Windows Startup 的 `start-wsl.vbs`（仅负责登录时启动 WSL，发行版名动态读取）+ 检查 `docker.service` 是否已自启；② 查看；③ 移除 WSL 自启动 |
+| 2 | 实例管理 | 进入二级菜单：添加 / 删除 / 重建单个实例 与 启动 / 停止 / 重启所有实例 |
+| 3 | 查看实例状态 | 展示每个实例的服务/状态/四个端口 + 运行汇总（无边框；不含 Mihomo 配置） |
+| 4 | 查看日志 | 输入编号查看单个实例，直接回车查看全部；Ctrl-C 退出回到菜单 |
+| 5 | 删除全部实例 | 删除所有容器，可选是否同时删除数据；**需输入 `DELETE` 确认** |
+| 6 | 更新 Docker 镜像 | `docker compose pull` + `up -d`，不删除数据 |
+| 7 | Mihomo 配置输出 | 生成 Mihomo **JS 覆写文件**，输出可点击的 Windows 路径（`\\wsl.localhost\...`）方便复制 |
+| 8 | 自启动配置 | ① 安装/检查：写 `start-wsl.vbs` + 检查 `docker.service` 自启；② 查看；③ 移除 WSL 自启动 |
 | 0 | 退出 | |
 
-> 每个操作执行完成后，会提示「按任意键返回主菜单」，方便看完输出后再回到菜单。
+**「2. 实例管理」二级菜单**：
+
+| 编号 | 功能 | 说明 |
+| --- | --- | --- |
+| 1 | 添加单个实例 | 默认追加到最大编号 + 1；也可输入空缺编号填空位；可视化展示现有/空缺编号 |
+| 2 | 删除单个实例 | 输入编号 → 删除容器，可选是否删除数据目录；**需输入 `DELETE` 确认**；剩余编号/端口保留（留空位） |
+| 3 | 重建单个实例 | `docker compose up -d --force-recreate atrust-N`，保留数据 |
+| 4 | 启动所有实例 | `docker compose up -d` |
+| 5 | 停止所有实例 | `docker compose stop`（保留容器与数据） |
+| 6 | 重启所有实例 | `docker compose restart` |
+| 0 | 返回主菜单 | |
+
+> 主菜单各操作执行完成后提示「按任意键返回」；**二级菜单选 0 返回主菜单时不提示**，直接回到主菜单。
 >
-> 删除类操作（3 / 10）都需要输入完整的 `DELETE` 才能执行，防止误删。
+> 删除类操作（2 删除单个 / 5 删除全部）都需要输入完整的 `DELETE` 才能执行，防止误删。
 
 ### 自启动原理（v0.3）
 
@@ -127,7 +136,7 @@ MAX_INSTANCES=20   # 实例数量上限
    - 若未启用，提示执行 `sudo systemctl enable docker`。
    - WSL 启动 → Docker daemon 运行 → 容器靠 compose 的 `restart: unless-stopped` 自动恢复。
 
-> 依赖：`docker.service` 由 `docker-ce` 包自带，多数发行版默认 enabled；脚本在「13. 自启动配置 → 安装/检查」时验证并提示。
+> 依赖：`docker.service` 由 `docker-ce` 包自带，多数发行版默认 enabled；脚本在「8. 自启动配置 → 安装/检查」时验证并提示。
 
 ## 安全说明
 
@@ -140,7 +149,7 @@ MAX_INSTANCES=20   # 实例数量上限
 
 ## Mihomo 配置输出
 
-选择「12. Mihomo 配置输出」会生成 **JS 覆写配置文件**：
+选择「7. Mihomo 配置输出」会生成 **JS 覆写配置文件**：
 
 - 文件位置：`${ATRUST_HOME}/mihomo-override.js`
 - 输出**可点击路径**（`\\wsl.localhost\Ubuntu\...`）以及 `file:///` 链接，在 Windows 中打开 → 全选复制 → 粘贴到 Mihomo / Clash Verge 的覆写配置即可
@@ -157,7 +166,7 @@ const RULES = [
 ]
 ```
 
-「5. 查看实例状态」仅展示实例状态，不再输出 Mihomo 相关内容。
+「3. 查看实例状态」仅展示实例状态，不再输出 Mihomo 相关内容。
 
 ## 常见问题
 
@@ -182,7 +191,7 @@ ls -l /dev/net/tun
 
 **有关 WSL 开机自启动**
 
-从 v0.3 起，使用「13. 自启动配置」即可一键安装：Windows 登录 → `start-wsl.vbs` 启动 WSL 常驻 → `docker.service` 自启 Docker → 容器靠 `restart: unless-stopped` 自动恢复。脚本会检查 docker.service 是否已自启，未启用时提示执行 `sudo systemctl enable docker`。
+从 v0.3 起，使用「8. 自启动配置」即可一键安装：Windows 登录 → `start-wsl.vbs` 启动 WSL 常驻 → `docker.service` 自启 Docker → 容器靠 `restart: unless-stopped` 自动恢复。脚本会检查 docker.service 是否已自启，未启用时提示执行 `sudo systemctl enable docker`。
 
 ## 开发与测试
 

@@ -21,7 +21,7 @@
 
 set -Eeuo pipefail
 
-VERSION="0.3.0"
+VERSION="0.3.1"
 
 # ----------------------------- 基本配置 -----------------------------
 ATRUST_HOME="${ATRUST_HOME:-${HOME}/atrust}"
@@ -1129,6 +1129,38 @@ autostart_menu() {
   done
 }
 
+# ----------------------------- 二级菜单：实例管理 -----------------------------
+# 只收 6 个：添加/删除/重建单个实例 + 启动/停止/重启所有实例
+instances_menu() {
+  local choice
+  while :; do
+    echo
+    echo "实例管理"
+    echo
+    echo "  1. 添加单个实例"
+    echo "  2. 删除单个实例"
+    echo "  3. 重建单个实例"
+    echo "  4. 启动所有实例"
+    echo "  5. 停止所有实例"
+    echo "  6. 重启所有实例"
+    echo "  0. 返回主菜单"
+    printf '\n请选择 [0-6]: '
+    IFS= read -r choice || return 0
+    case "$choice" in
+      1) ( add_instance ) ;;
+      2) ( delete_instance ) ;;
+      3) ( rebuild_instance ) ;;
+      4) ( start_all ) ;;
+      5) ( stop_all ) ;;
+      6) ( restart_all ) ;;
+      0) return 0 ;;
+      *) warn "无效选项「${choice}」。"
+         echo
+         wait_return ;;
+    esac
+  done
+}
+
 # ----------------------------- 菜单 -----------------------------
 show_menu() {
   if [[ -t 1 ]] && command -v clear >/dev/null 2>&1; then
@@ -1137,28 +1169,23 @@ show_menu() {
   cat <<'MENU'
 
 ╔══════════════════════════════════════════╗
-║          aTrust Manager v0.3.0           ║
+║          aTrust Manager v0.3.1           ║
 ╠══════════════════════════════════════════╣
 ║                                          ║
 ║  1. 创建 / 更新 aTrust 实例              ║
-║  2. 添加单个实例                         ║
-║  3. 删除单个实例                         ║
-║  4. 重建单个实例                         ║
-║  5. 查看实例状态                         ║
-║  6. 启动所有实例                         ║
-║  7. 停止所有实例                         ║
-║  8. 重启所有实例                         ║
-║  9. 查看日志                             ║
-║ 10. 删除全部实例                         ║
-║ 11. 更新 Docker 镜像                     ║
-║ 12. Mihomo 配置输出                      ║
-║ 13. 自启动配置                           ║
+║  2. 实例管理                             ║
+║  3. 查看实例状态                         ║
+║  4. 查看日志                             ║
+║  5. 删除全部实例                         ║
+║  6. 更新 Docker 镜像                     ║
+║  7. Mihomo 配置输出                      ║
+║  8. 自启动配置                           ║
 ║  0. 退出                                 ║
 ║                                          ║
 ╚══════════════════════════════════════════╝
 
 MENU
-  printf '请选择 [0-13]: '
+  printf '请选择 [0-8]: '
 }
 
 usage() {
@@ -1206,23 +1233,18 @@ main() {
     show_menu
     IFS= read -r choice || break
     case "$choice" in
-      1) ( create_instances ) ;;
-      2) ( add_instance ) ;;
-      3) ( delete_instance ) ;;
-      4) ( rebuild_instance ) ;;
-      5) ( show_status ) ;;
-      6) ( start_all ) ;;
-      7) ( stop_all ) ;;
-      8) ( restart_all ) ;;
-      9) ( view_logs ) ;;
-      10) ( delete_all ) ;;
-      11) ( update_image ) ;;
-      12) ( mihomo_config ) ;;
-      13) ( autostart_menu ) ;;
+      1) ( create_instances ); wait_return ;;
+      2) ( instances_menu ) ;;      # 二级菜单内部自行处理返回，不再额外等待按键
+      3) ( show_status ); wait_return ;;
+      4) ( view_logs ) ;;           # 日志自身 Ctrl-C / 结束返回，不额外等待
+      5) ( delete_all ); wait_return ;;
+      6) ( update_image ); wait_return ;;
+      7) ( mihomo_config ); wait_return ;;
+      8) ( autostart_menu ) ;;      # 同上
       0) echo; ok "再见。"; exit 0 ;;
-      *) warn "无效选项「${choice}」，请输入 0-13。" ;;
+      *) warn "无效选项「${choice}」，请输入 0-8。"
+         wait_return ;;
     esac
-    wait_return
   done
 }
 
