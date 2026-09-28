@@ -21,7 +21,7 @@
 
 set -Eeuo pipefail
 
-VERSION="0.2.0"
+VERSION="0.3.0"
 
 # ----------------------------- 基本配置 -----------------------------
 ATRUST_HOME="${ATRUST_HOME:-${HOME}/atrust}"
@@ -950,6 +950,185 @@ update_image() {
   ok "镜像已更新，实例已重建。"
 }
 
+# ----------------------------- 自启动配置 -----------------------------
+# Windows Startup 目录中的 vbs：仅负责登录后启动 WSL 保持常驻（不含 aTrust）
+# 可通过环境变量覆盖真实路径（测试用）
+AUTOSTART_VBS_DIR="${AUTOSTART_VBS_DIR:-}"
+
+# 读取当前 WSL 发行版名（用户运行时动态获取，不写死）
+read_wsl_distro() {
+  local d
+  d="${WSL_DISTRO_NAME:-}"
+  if [[ -z "$d" ]]; then
+    d="$(wsl.exe -l -q 2>/dev/null | tr -d '\0' | grep -v 'docker-desktop' | head -n1 | tr -d ' \r')"
+  fi
+  printf '%s\n' "$d"
+}
+
+# 真实路径解析：优先环境变量（测试），否则用默认真实路径
+real_startup_dir() {
+  if [[ -n "$AUTOSTART_VBS_DIR" ]]; then
+    printf '%s\n' "$AUTOSTART_VBS_DIR"
+    return
+  fi
+  local user dir
+  if command -v cmd.exe >/dev/null 2>&1; then
+    user="$(cmd.exe /c echo %USERNAME% 2>/dev/null | tr -d '\r')"
+  fi
+  if [[ -z "$user" ]]; then
+    user="${USER:-}"
+  fi
+  dir="/mnt/c/Users/${user}/AppData/Roaming/Microsoft/Windows/Start Menu/Programs/Startup"
+  printf '%s\n' "$dir"
+}
+
+# 检查 docker.service 是否已设为开机自启
+docker_service_status() {
+  if ! command -v systemctl >/dev/null 2>&1; then
+    printf 'nosystemd\n'
+    return
+  fi
+  if ! systemctl list-unit-files 'docker.service' >/dev/null 2>&1; then
+    printf 'nofile\n'
+    return
+  fi
+  local st
+  st="$(systemctl is-enabled docker.service 2>/dev/null || true)"
+  printf '%s\n' "${st:-unknown}"
+}
+
+autostart_install() {
+  local distro vbs_dir vbs dst
+
+  distro="$(read_wsl_distro)"
+  if [[ -z "$distro" ]]; then
+    err "无法识别当前 WSL 发行版名，安装自启失败。"
+    return 0
+  fi
+
+  vbs_dir="$(real_startup_dir)"
+  vbs="${vbs_dir}/start-wsl.vbs"
+
+  echo
+  info "正在写入 Windows 自启动脚本（发行版：${distro}）..."
+  mkdir -p "${vbs_dir}"
+  cat > "${vbs}" <<VBS
+Set shell = CreateObject("WScript.Shell")
+shell.Run "wsl.exe -d ${distro} --exec /bin/sleep infinity", 0, False
+VBS
+  ok "已写入 ${vbs}（仅负责 Windows 登录时启动 WSL）"
+
+  echo
+  info "正在检查 docker.service 开机自启 ..."
+  dst="$(docker_service_status)"
+  case "$dst" in
+    enabled)
+      ok "docker.service 已启用开机自启（WSL 启动后 Docker 自动运行，aTrust 随 restart 策略恢复）。"
+      ;;
+    nosystemd)
+      warn "未检测到 systemd（可能不是 systemd 发行版）。"
+      hint "请确认 Docker 由其它机制随 WSL 启动，否则 aTrust 无法自启。"
+      ;;
+    nofile)
+      warn "未找到 docker.service（Docker 可能不是以系统服务方式安装）。"
+      hint "请确认 Docker 用什么方式随 WSL 启动（如 Docker Desktop / rootless / 自启脚本）。"
+      ;;
+    *)
+      warn "docker.service 当前未启用开机自启（${dst}）。"
+      hint "请执行以下命令开启（需要 sudo）："
+      hint "  sudo systemctl enable docker"
+      ;;
+  esac
+
+  ok "自启动配置完成：Windows 登录 → WSL 常驻 → Docker 自启 → aTrust 自动恢复。"
+}
+
+autostart_status() {
+  local distro vbs_dir vbs dst
+  distro="$(read_wsl_distro)"
+  vbs_dir="$(real_startup_dir)"
+  vbs="${vbs_dir}/start-wsl.vbs"
+
+  echo
+  echo "自启动配置状态："
+  echo
+  echo "  WSL 发行版：${distro:-未知}"
+
+  echo
+  echo "  Windows 自启 vbs："
+  if [[ -f "${vbs}" ]]; then
+    printf '    %b已安装%b（%s）\n' "$C_GREEN" "$C_NC" "${vbs}"
+    printf '    内容：%s\n' "$(tr -d '\r' < "${vbs}" | grep 'wsl.exe' | head -n1)"
+  else
+    printf '    %b未安装%b（%s）\n' "$C_YELLOW" "$C_NC" "${vbs}"
+  fi
+
+  echo
+  echo "  docker.service 开机自启："
+  dst="$(docker_service_status)"
+  case "$dst" in
+    enabled)
+      printf '    %b已启用%b（WSL 启动后 Docker 自动运行）\n' "$C_GREEN" "$C_NC"
+      ;;
+    disabled|static|masked|indirect)
+      printf '    %b未启用%b（当前：%s，需 sudo systemctl enable docker）\n' "$C_YELLOW" "$C_NC" "$dst"
+      ;;
+    nosystemd)
+      printf '    未检测到 systemd\n'
+      ;;
+    nofile)
+      printf '    未找到 docker.service（Docker 可能非系统服务方式安装）\n'
+      ;;
+    *)
+      printf '    状态未知（%s）\n' "${dst:-?}"
+      ;;
+  esac
+  echo
+}
+
+autostart_remove() {
+  local vbs_dir vbs
+  vbs_dir="$(real_startup_dir)"
+  vbs="${vbs_dir}/start-wsl.vbs"
+
+  echo
+  warn "将移除 WSL 自启动（start-wsl.vbs）。"
+  printf '  - %s\n' "${vbs}"
+  if ! ask_yn "确认？"; then
+    echo "已取消。"
+    return 0
+  fi
+
+  rm -f "${vbs}" 2>/dev/null || true
+  ok "已移除 WSL 自启动。"
+  echo
+  hint "注意：docker.service 的开机自启不会随此操作改动（那是系统级设置，保持原状）。"
+}
+
+autostart_menu() {
+  local choice
+  while :; do
+    echo
+    echo "自启动配置"
+    echo
+    echo "  1. 安装 / 检查自启动"
+    echo "  2. 查看自启动状态"
+    echo "  3. 移除 WSL 自启动"
+    echo "  0. 返回主菜单"
+    printf '\n请选择 [0-3]: '
+    IFS= read -r choice || return 0
+    case "$choice" in
+      1) autostart_install ;;
+      2) autostart_status ;;
+      3) autostart_remove ;;
+      0) return 0 ;;
+      *) warn "无效选项「${choice}」。"
+         echo
+         wait_return ;;
+    esac
+  done
+}
+
 # ----------------------------- 菜单 -----------------------------
 show_menu() {
   if [[ -t 1 ]] && command -v clear >/dev/null 2>&1; then
@@ -958,7 +1137,7 @@ show_menu() {
   cat <<'MENU'
 
 ╔══════════════════════════════════════════╗
-║          aTrust Manager v0.2.0           ║
+║          aTrust Manager v0.3.0           ║
 ╠══════════════════════════════════════════╣
 ║                                          ║
 ║  1. 创建 / 更新 aTrust 实例              ║
@@ -973,12 +1152,13 @@ show_menu() {
 ║ 10. 删除全部实例                         ║
 ║ 11. 更新 Docker 镜像                     ║
 ║ 12. Mihomo 配置输出                      ║
+║ 13. 自启动配置                           ║
 ║  0. 退出                                 ║
 ║                                          ║
 ╚══════════════════════════════════════════╝
 
 MENU
-  printf '请选择 [0-12]: '
+  printf '请选择 [0-13]: '
 }
 
 usage() {
@@ -1038,8 +1218,9 @@ main() {
       10) ( delete_all ) ;;
       11) ( update_image ) ;;
       12) ( mihomo_config ) ;;
+      13) ( autostart_menu ) ;;
       0) echo; ok "再见。"; exit 0 ;;
-      *) warn "无效选项「${choice}」，请输入 0-12。" ;;
+      *) warn "无效选项「${choice}」，请输入 0-13。" ;;
     esac
     wait_return
   done

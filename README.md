@@ -14,6 +14,7 @@
 - 自动生成 `compose.yaml`，并先通过 `docker compose config` 校验再启动
 - 启动 / 停止 / 重启 / 状态 / 日志 / 删除容器（可含数据）/ 更新镜像
 - **Mihomo JS 覆写配置输出**：生成可点击的 Windows 路径文件，直接复制填入 Mihomo / Clash Verge
+- **自启动配置（v0.3）**：一键安装 Windows 登录自启 WSL + 检查 `docker.service` 已自启（配合 `restart: unless-stopped` 自动拉起 aTrust）；发行版名动态读取
 - `restart: unless-stopped`，Docker Engine 重启后自动恢复实例
 - 自动适配 `docker` 或 `sudo docker` 权限
 - 端口冲突检测；删除类操作需输入 `DELETE` 二次确认
@@ -107,11 +108,26 @@ MAX_INSTANCES=20   # 实例数量上限
 | 10 | 删除全部实例 | 删除所有容器，可选是否同时删除数据；**需输入 `DELETE` 确认**（原「删除容器」「完全删除」两项合并） |
 | 11 | 更新 Docker 镜像 | `docker compose pull` + `up -d`，不删除数据 |
 | 12 | Mihomo 配置输出 | 生成 Mihomo **JS 覆写文件**，输出可点击的 Windows 路径（`\\wsl.localhost\...`）方便复制 |
+| 13 | 自启动配置 | ① 安装/检查：写入 Windows Startup 的 `start-wsl.vbs`（仅负责登录时启动 WSL，发行版名动态读取）+ 检查 `docker.service` 是否已自启；② 查看；③ 移除 WSL 自启动 |
 | 0 | 退出 | |
 
 > 每个操作执行完成后，会提示「按任意键返回主菜单」，方便看完输出后再回到菜单。
 >
 > 删除类操作（3 / 10）都需要输入完整的 `DELETE` 才能执行，防止误删。
+
+### 自启动原理（v0.3）
+
+自启动只依赖两件已就绪的机制，脚本负责**安装 Windows 侧**并**检查 WSL 侧**：
+
+1. **Windows 层（`start-wsl.vbs`）——脚本安装**：放在启动文件夹，Windows 登录时以隐藏窗口启动 WSL 并保持常驻。只做这一件事，**不含** aTrust 逻辑。
+   - 内容：`wsl.exe -d <发行版> --exec /bin/sleep infinity`
+   - 发行版名在用户运行时从当前 WSL 环境动态读取（`WSL_DISTRO_NAME` / `wsl -l -q`），不写死。
+
+2. **WSL 层（docker.service 自启）——脚本检查**：不创建额外 systemd 服务，而是**验证 `docker.service` 是否已 `enabled`**。
+   - 若未启用，提示执行 `sudo systemctl enable docker`。
+   - WSL 启动 → Docker daemon 运行 → 容器靠 compose 的 `restart: unless-stopped` 自动恢复。
+
+> 依赖：`docker.service` 由 `docker-ce` 包自带，多数发行版默认 enabled；脚本在「13. 自启动配置 → 安装/检查」时验证并提示。
 
 ## 安全说明
 
@@ -166,7 +182,7 @@ ls -l /dev/net/tun
 
 **有关 WSL 开机自启动**
 
-v0.2 不修改系统配置；实例通过 `restart: unless-stopped` 由 Docker 自动恢复。WSL 自启动配置计划在后续版本作为独立功能提供。
+从 v0.3 起，使用「13. 自启动配置」即可一键安装：Windows 登录 → `start-wsl.vbs` 启动 WSL 常驻 → `docker.service` 自启 Docker → 容器靠 `restart: unless-stopped` 自动恢复。脚本会检查 docker.service 是否已自启，未启用时提示执行 `sudo systemctl enable docker`。
 
 ## 开发与测试
 

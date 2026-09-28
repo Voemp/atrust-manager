@@ -106,7 +106,7 @@ echo
 echo "--- 0. 命令行选项 ---"
 
 out="$(bash "${MANAGER}" --version 2>&1 || true)"
-check "$(contains "$out" "atrust-manager 0.2.0")" "0.1 --version 输出版本号" "atrust-manager 0.2.0"
+check "$(contains "$out" "atrust-manager 0.3.0")" "0.1 --version 输出版本号" "atrust-manager 0.3.0"
 
 out="$(bash "${MANAGER}" --help 2>&1 || true)"
 check "$(contains "$out" "用法")" "0.2 --help 显示用法" "用法"
@@ -411,6 +411,44 @@ check "$(contains "$out" "atrust-2")" "21.3 显示实例 atrust-2" "atrust-2"
 check "$(contains "$out" "${S0}")" "21.4 显示 SOCKS5 端口 ${S0}" "${S0}"
 check "$(contains "$out" "运行")" "21.5 运行汇总" "运行"
 check "$([ "$(printf '%s' "$out" | grep -cF '覆写文件' || true)" = "0" ] && echo 1 || echo 0)" "21.6 状态输出不含 Mihomo 覆写文件" "状态不含 Mihomo 覆写文件"
+
+# ---------------------------------------------------------------
+echo "--- 22. 自启动配置（菜单 13） ---"
+
+out="$(bash "${MANAGER}" --version 2>&1 || true)"
+check "$(contains "$out" "atrust-manager 0.3.0")" "22.0 版本号 0.3.0" "atrust-manager 0.3.0"
+
+# 使用临时目录模拟 Windows Startup（不写真实启动文件夹）
+export AUTOSTART_VBS_DIR="${WORK}/startup"
+mkdir -p "${AUTOSTART_VBS_DIR}"
+# 模拟已有旧 vbs（3.0 兼容）
+printf 'Set shell = CreateObject("WScript.Shell")\r\nshell.Run "wsl.exe -d Ubuntu --exec /bin/sleep infinity", 0, False\r\n' > "${AUTOSTART_VBS_DIR}/start-wsl.vbs"
+
+# 安装/检查：菜单 13 → 1
+capture '13\n1\nk0\n'
+out="$CAP"
+check "$(contains "$out" "自启动配置")" "22.1 菜单含自启动配置" "自启动配置"
+VBS="${AUTOSTART_VBS_DIR}/start-wsl.vbs"
+check "$([ -f "${VBS}" ] && echo 1 || echo 0)" "22.2 已生成 start-wsl.vbs" "存在 start-wsl.vbs"
+VBS_C="$(cat "${VBS}" 2>/dev/null || true)"
+check "$(contains "$VBS_C" "wsl.exe")" "22.3 vbs 包含 wsl.exe" "wsl.exe"
+check "$(contains "$VBS_C" "sleep infinity")" "22.4 vbs 包含 sleep infinity" "sleep infinity"
+check "$(contains "$out" "docker.service")" "22.5 检查 docker.service 自启" "输出含 docker.service"
+# 不应再创建 atrust.service（已移除该设计）
+check "$([ ! -e "${WORK}/systemd/atrust.service" ] && [ ! -e "/etc/systemd/system/atrust.service" ] && echo 1 || echo 0)" "22.6 不再创建 atrust.service" "不存在 atrust.service"
+
+# 查看：菜单 13 → 2
+capture '13\n2\nk0\n'
+out="$CAP"
+check "$(contains "$out" "start-wsl.vbs")" "22.7 查看含 vbs 路径" "start-wsl.vbs"
+check "$(contains "$out" "docker.service")" "22.8 查看含 docker.service 状态" "docker.service"
+
+# 移除：菜单 13 → 3 → 确认 y
+capture '13\n3\ny\nk0\n'
+out="$CAP"
+check "$([ ! -f "${VBS}" ] && echo 1 || echo 0)" "22.9 移除后 vbs 删除" "start-wsl.vbs 不存在"
+check "$(contains "$out" "已移除")" "22.10 移除提示" "已移除"
+
 
 # ---------------------------------------------------------------
 echo
