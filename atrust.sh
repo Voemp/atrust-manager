@@ -10,7 +10,7 @@
 #  数据目录：${ATRUST_HOME:-$HOME/atrust}
 #
 #  一键运行：
-#     curl -fsSL https://am.voemp.top/atrust.sh | bash
+#     curl -fsSL https://raw.githubusercontent.com/Voemp/atrust-manager/main/atrust.sh | bash -h
 #
 #  命令行选项：
 #     -h, --help     显示帮助
@@ -1200,7 +1200,7 @@ usage() {
 不带参数直接运行将进入交互式菜单。
 
 一键运行：
-  curl -fsSL https://am.voemp.top/atrust.sh | bash
+  curl -fsSL https://raw.githubusercontent.com/Voemp/atrust-manager/main/atrust.sh | bash -h
 EOF
 }
 

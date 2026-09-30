@@ -14,7 +14,7 @@
 - 自动生成 `compose.yaml`，并先通过 `docker compose config` 校验再启动
 - 启动 / 停止 / 重启 / 状态 / 日志 / 删除容器（可含数据）/ 更新镜像
 - **Mihomo JS 覆写配置输出**：生成可点击的 Windows 路径文件，直接复制填入 Mihomo / Clash Verge
-- **自启动配置（v0.3）**：一键安装 Windows 登录自启 WSL + 检查 `docker.service` 已自启（配合 `restart: unless-stopped` 自动拉起 aTrust）；发行版名动态读取
+- **自启动配置**：一键安装 Windows 登录自启 WSL + 检查 `docker.service` 已自启（配合 `restart: unless-stopped` 自动拉起 aTrust）；发行版名动态读取
 - `restart: unless-stopped`，Docker Engine 重启后自动恢复实例
 - 自动适配 `docker` 或 `sudo docker` 权限
 - 端口冲突检测；删除类操作需输入 `DELETE` 二次确认
@@ -24,7 +24,7 @@
 在 WSL / Linux 中（一键运行）：
 
 ```bash
-curl -fsSL https://am.voemp.top/atrust.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Voemp/atrust-manager/main/atrust.sh | bash -h
 ```
 
 或本地运行：
@@ -124,7 +124,7 @@ MAX_INSTANCES=20   # 实例数量上限
 >
 > 删除类操作（2 删除单个 / 5 删除全部）都需要输入完整的 `DELETE` 才能执行，防止误删。
 
-### 自启动原理（v0.3）
+### 自启动原理
 
 自启动只依赖两件已就绪的机制，脚本负责**安装 Windows 侧**并**检查 WSL 侧**：
 
@@ -155,18 +155,6 @@ MAX_INSTANCES=20   # 实例数量上限
 - 输出**可点击路径**（`\\wsl.localhost\Ubuntu\...`）以及 `file:///` 链接，在 Windows 中打开 → 全选复制 → 粘贴到 Mihomo / Clash Verge 的覆写配置即可
 - 覆写脚本已用脚本配置的**真实 SOCKS5 起始端口**生成 aTrust 节点，`main()` 结构保持不变
 - `RULES` / `HOSTS` / `FAKE_IP_FILTER` 留空并带一行注释示例，按内网需求填写（可留空）
-
-示例文件开头：
-
-```js
-// RULES[0] → aTrust-1 → 127.0.0.1:1080
-// RULES[1] → aTrust-2 → 127.0.0.1:1081
-const RULES = [
-  // 示例：['192.168.5.0/24', '172.25.0.0/24', '10.11.2.0/24']
-]
-```
-
-「3. 查看实例状态」仅展示实例状态，不再输出 Mihomo 相关内容。
 
 ## 常见问题
 
